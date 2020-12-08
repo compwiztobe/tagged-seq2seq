@@ -4,32 +4,28 @@ from flair.data import Sentence
 import sys
 import datetime
 
-def tag_sentences(tagger, sentences):
-  def tag_batch(batch, token_count):
-    print("Tagging batch of %d sentences, %s tokens" % (len(batch), token_count), file=sys.stderr)
-    tagger.predict(batch, mini_batch_size=256)
+def tag_sentences(tagger, sentences, progress=False):
+  def tag_batch(batch):
+    tagger.predict(batch, mini_batch_size=100)
     return batch
   batch = []
   token_count = 0
   for i, sentence in enumerate(sentences):
-    if args.progress and i % 1000 == 0:
-      print("%s read %d sentences ..." % (datetime.datetime.now().isoformat(), i), file=sys.stderr)
     batch.append(sentence)
     token_count += len(sentence.tokens)
-    if token_count >= 65536: # len(batch) == 1024 # or 1000 with batch size 250, and log on 1000
-      yield from tag_batch(batch, token_count)
+    if len(batch) == 10000:
+      if progress:
+        print("%s read %d sentences ..." % (datetime.datetime.now().isoformat(), i+1), file=sys.stderr)
+      yield from tag_batch(batch)
       batch = []
       token_count = 0
   if batch:
-    yield from tag_batch(batch, token_count)
+    yield from tag_batch(batch)
 
 def is_NE(token):
   return any(tag.value != 'O' for tag in token.annotation_layers['ner'])
 
 def main(args):
-  print(args)
-  # yield from range(10)
-  # return 100
   tagger = SequenceTagger.load(args.model_file)
 
   token_count = 0
@@ -38,7 +34,7 @@ def main(args):
 
   sentences = (Sentence(line) for line in sys.stdin if line.strip() != "" and not line.startswith("#"))
 
-  for tagged_sentence in tag_sentences(tagger, sentences):
+  for tagged_sentence in tag_sentences(tagger, sentences, progress=args.progress):
     if args.print_tags:
       yield tagged_sentence
     token_count += len(tagged_sentence.tokens)
@@ -65,12 +61,12 @@ parser.add_argument("--no-progress", dest='progress', default=True, action='stor
 # parser.add_argument("--print-tags", metavar="TAG_FILE", default=False, nargs='?', const=True,
 #                     help="print NER tags to file, or stdout if unspecified, in .bio format (Flair input format)")
 
-def print_return(g, file=sys.stderr):
+def print_StopIterator(g, file=None):
   stop = yield from g
   print(stop, file=file)
 
 if __name__ == "__main__":
   args = parser.parse_args()
-  output = print_return(main(parser.parse_args()))
+  output = print_StopIterator(main(parser.parse_args()), file=sys.stderr)
   for line in output:
       print(line)
