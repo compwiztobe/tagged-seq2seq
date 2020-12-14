@@ -19,6 +19,7 @@ def tag_sentences(tagger, sentences, progress=False):
       yield from tag_batch(batch)
       batch = []
       token_count = 0
+      print("do not clear cache",file=sys.stderr)
   if batch:
     yield from tag_batch(batch)
 
