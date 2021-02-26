@@ -24,7 +24,10 @@ def tag_sentences(tagger, sentences, progress=False):
     yield from tag_batch(batch)
 
 def is_NE(token):
-  return any(tag.value != 'O' for tag in token.annotation_layers['ner'])
+  # this is for some later version of flair, whatever is installed on solar?
+  #return any(tag.value != 'O' for tag in token.annotation_layers['ner'])
+  # for an earlier version, whatever is installed on kle4
+  return token.tags['ner'].value != 'O'
 
 def main(args):
   tagger = SequenceTagger.load(args.model_file)
