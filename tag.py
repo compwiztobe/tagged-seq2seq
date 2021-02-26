@@ -6,7 +6,7 @@ import datetime
 
 def tag_sentences(tagger, sentences, progress=False):
   def tag_batch(batch):
-    tagger.predict(batch, mini_batch_size=100)
+    tagger.predict(batch, mini_batch_size=625)
     return batch
   batch = []
   token_count = 0
