@@ -40,7 +40,7 @@ def main(args):
 
   for tagged_sentence in tag_sentences(tagger, sentences, progress=args.progress):
     if args.print_tags:
-      yield tagged_sentence
+      yield ' '.join(t.tags['ner'].value for t in tagged_sentence.tokens)
     token_count += len(tagged_sentence.tokens)
     sentence_count += 1
     NE_count += sum(is_NE(token) for token in tagged_sentence.tokens)
