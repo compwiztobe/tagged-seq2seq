@@ -8,32 +8,32 @@ class TupleDictionary(Dictionary):
   convert multiple dictionaries with their own indices
   into a single dictionary with factored indices
   """
-  def __init__(self, *dictionaries):
-    self.dictionaries = dictionaries
+  def __init__(self, *dicts):
+    self.dicts = dicts
     self.bos_word, self.unk_word, self.pad_word, self.eos_word = [
-      tuple(getattr(dictionary, attr) for dictionary in dictionaries)
+      tuple(getattr(d, attr) for d in dicts)
       for attr in ['bos_word', 'unk_word', 'pad_word', 'eos_word']
     ]
     self.bos_index, self.unk_index, self.pad_index, self.eos_index = [
-      self.compute_index(getattr(dictionary, attr) for dictionary in dictionaries)
+      self.compute_index(getattr(d, attr) for d in dicts)
       for attr in ['bos_index', 'unk_index', 'pad_index', 'eos_index']
     ]
-    # self.extra_special_symbols = product(dictionary.extra_special_symbols for dictionary in dictionaries)
-    self.nspecial = prod(dictionary.nspecial for dictionary in dictionaries)
+    # self.extra_special_symbols = product(d.extra_special_symbols for d in dicts)
+    self.nspecial = prod(d.nspecial for d in dicts)
 
   def __getattr__(self, attr):
     try:
-      return tuple(getattr(dictionary, attr) for dictionary in self.dictionaries)
+      return tuple(getattr(d, attr) for d in self.dicts)
     except AttributeError:
       raise AttributeError("'%s' object has no attribute '%s'", (type(self), attr))
 
   @property
   def factors(self):
-    return tuple(len(dictionary) for dictionary in self.dictionaries)
+    return tuple(len(d) for d in self.dicts)
 
   @property
   def symbols(self):
-    return list(product(*[dictionary.symbols for dictionary in self.dictionaries]))
+    return list(product(*[d.symbols for d in self.dicts]))
 
   @property
   def count(self):
@@ -42,7 +42,7 @@ class TupleDictionary(Dictionary):
   @property
   def indices(self):
     return {
-      symbols: self.compute_index(dictionary.indices[symbol] for dictionary, symbol in zip(self.dictionaries, symbols))
+      symbols: self.compute_index(d.indices[symbol] for d, symbol in zip(self.dicts, symbols))
       for symbols in self.symbols
     }
 
@@ -59,25 +59,25 @@ class TupleDictionary(Dictionary):
     )
 
   def __eq__(self, other):
-    return hasattr(other, 'dictionaries') and self.dictionaries == other.dictionaries
+    return hasattr(other, 'dicts') and self.dicts == other.dicts
 
   def __len__(self):
     return prod(self.factors())
 
   def __getitem__(self, index):
     indices = self.factor_index(index)
-    return tuple(dictionary.symbols[i] for dictionary, i in zip(self.dictionaries, indices))
+    return tuple(d.symbols[i] for d, i in zip(self.dicts, indices))
 
   def __contains__(self, syms):
-    return all(sym in dictionary.symbols for sym, dictionary in zip(syms, self.dictionaries))
+    return all(sym in d.symbols for sym, d in zip(syms, self.dicts))
 
   def index(self, syms):
     """Returns the index of the specified symbol"""
     assert isinstance(syms, tuple)
-    return self.compute_index(dictionary.index(sym) for dictionary, sym in zip(self.dictionaries, syms))
+    return self.compute_index(d.index(sym) for d, sym in zip(self.dicts, syms))
 
   def unk_string(self, escape=False):
-    return tuple(dictionary.unk_string(escape) for dictionary in self.dictionaries)
+    return tuple(d.unk_string(escape) for d in self.dicts)
 
   def string(
     self,
@@ -98,13 +98,13 @@ class TupleDictionary(Dictionary):
       )
 
     if bpe_symbols is None:
-      bpe_symbols = [None for _ in self.dictionaries]
+      bpe_symbols = [None for _ in self.dicts]
     if escape_unks is False:
-      escape_unks = [False for _ in self.dictionaries]
+      escape_unks = [False for _ in self.dicts]
     if extra_symbols_to_ignore is None:
-      extra_symbols_to_ignore = [None for _ in self.dictionaries]
+      extra_symbols_to_ignore = [None for _ in self.dicts]
     if unk_strings is None:
-      unk_strings = [None for _ in self.dictionaries]
+      unk_strings = [None for _ in self.dicts]
 
     if not factored_indices:
       tensor = [self.factor_index(i) for i in tensor]
@@ -112,11 +112,11 @@ class TupleDictionary(Dictionary):
     print(list(zip(*tensor)))
     strings = [
       [
-        dictionary.string([index], bpe_symbol, escape_unk, extra_symbols, unk_string)
+        d.string([index], bpe_symbol, escape_unk, extra_symbols, unk_string)
         for index in indices
       ]
-      for dictionary, indices, bpe_symbol, escape_unk, extra_symbols, unk_string
-      in zip(self.dictionaries, zip(*tensor), bpe_symbols, escape_unks, extra_symbols_to_ignore, unk_strings)
+      for d, indices, bpe_symbol, escape_unk, extra_symbols, unk_string
+      in zip(self.dicts, zip(*tensor), bpe_symbols, escape_unks, extra_symbols_to_ignore, unk_strings)
     ]
     return " ".join(separator.join(t) for t in zip(*strings))
 
