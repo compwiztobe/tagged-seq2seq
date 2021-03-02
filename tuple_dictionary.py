@@ -1,5 +1,6 @@
 from math import prod # as product # requires python 3.8
 from itertools import product # as direct_product
+from collections import Counter
 from torch import is_tensor
 from fairseq.data import Dictionary
 
@@ -8,8 +9,10 @@ class TupleDictionary(Dictionary):
   convert multiple dictionaries with their own indices
   into a single dictionary with factored indices
   """
-  def __init__(self, *dicts):
+  def __init__(self, sep, *dicts):
+    self.sep = sep
     self.dicts = dicts
+    self.counts = Counter()
     self.bos_word, self.unk_word, self.pad_word, self.eos_word = [
       tuple(getattr(d, attr) for d in dicts)
       for attr in ['bos_word', 'unk_word', 'pad_word', 'eos_word']
@@ -37,7 +40,7 @@ class TupleDictionary(Dictionary):
 
   @property
   def count(self):
-    return list(prod(x) for x in product(*self.__getattr__('count')))
+    return [self.counts[sym] for sym in symbols]
 
   @property
   def indices(self):
@@ -71,13 +74,20 @@ class TupleDictionary(Dictionary):
   def __contains__(self, syms):
     return all(sym in d.symbols for sym, d in zip(syms, self.dicts))
 
-  def index(self, syms):
+  def index(self, syms, as_tuple=False):
     """Returns the index of the specified symbol"""
-    assert isinstance(syms, tuple)
+    assert isinstance(syms, str) or as_tuple
+    if not as_tuple:
+      syms = tuple(syms.split(self.sep))
+    assert isinstance(syms, tuple) and len(syms) == len(self.dicts)
     return self.compute_index(d.index(sym) for d, sym in zip(self.dicts, syms))
 
-  def unk_string(self, escape=False):
-    return tuple(d.unk_string(escape) for d in self.dicts)
+  def unk_string(self, escape=False, as_tuple=False):
+    unk = tuple(d.unk_string(escape) for d in self.dicts)
+    if as_tuple:
+      return unk
+    else:
+      return self.sep.join(unk)
 
   def string(
     self,
@@ -120,25 +130,102 @@ class TupleDictionary(Dictionary):
     ]
     return " ".join(separator.join(t) for t in zip(*strings))
 
-  def add_symbol(self, word, n=1, overwrite=False):
-    raise NotImplementedError
+  def add_symbol(self, word, n=1, overwrite=False, as_tuple=False):
+    if not as_tuple:
+      word = tuple(word.split(self.sep))
+    self.counts.update(Counter({word: n}))
+    indices = tuple(d.add_symbol(w, n=n, overwrite=overwrite) for d, w in zip(self.dicts, word))
+    return self.compute_index(indices)
 
   def update(self, new_dict):
-    raise NotImplementedError
+    assert hasattr(new_dict, 'dicts') and hasattr(new_dict, 'counts')
+    for d1, d2 in zip(self.dicts, new_dict.dicts):
+      d1.update(d2)
+    self.counts.update(new_dict.counts)
 
-  def finalize(self, threshold=-1, nwords=-1, padding_factor=8):
-    raise NotImplementedError
+  def finalize(self, threshold=-1, nwords=-1, padding_factor=[8]):
+    # a couple ways to finalize:
+    # threshold, nwords, and padding_factor can be applied at the tuple level
+    # though this may complicate how it propagates to the factor dictionaries
+    # and keeps this factorization valid
+    # or, threshold, nwords, and padding_factor can be applied to each factor
+    # but then we probably want to apply differently for each, or apply to only one
+    # threshold only the token vocab (use full tag vocab)
+    # nwords limits only the size of the subword token vocab (again, use full tag vocab)
+    # padding_factor only applies to token vocab, likely to be the largest factor and
+    # therefore guarantees the tuple vocab has the same factor, while minimizing the extra increase in size
+    if isinstance(threshold, int):
+      threshold = [threshold for _ in self.dicts]
+    if isinstance(nwords, int):
+      nwords = [nwords for _ in self.dicts]
+    if isinstance(padding_factor, int):
+      padding_factor = [padding_factor for _ in self.dicts]
+    if len(threshold) < len(self.dicts):
+      threshold = threshold + [-1] * (len(self.dicts) - len(threshold))
+    if len(nwords) < len(self.dicts):
+      nwords = nwords + [-1] * (len(self.dicts) - len(nwords))
+    if len(padding_factor) < len(self.dicts):
+      padding_factor = padding_factor + [1] * (len(self.dicts) - len(padding_factor))
+    for d, t, n, p in zip(self.dicts, threshold, nwords, padding_factor):
+      d.finalize(t, n, p)
+    # this will mess with the tuple level counts
 
   def pad_to_multiple_(self, padding_factor):
     raise NotImplementedError
 
-  @classmethod
-  def load(cls, f):
-    raise NotImplementedError
+  # need this inherited from Dictionary, since LegacyFairseqTask calls it on the task's
+  # dictionary class (not statically)
+  # @classmethod
+  # def load(cls, f):
+  #   raise NotImplementedError
 
   def add_from_file(self, f):
-    raise NotImplementedError
+    # loop through the file as in inherited implementation,
+    # but splitting vocab entries on sep and adding to appropriate factor dictionaries
+    # actually this is no different from inherited implementation, and so with count support
+    # at tuple level (and add_symbol properly implemented), this would not be needed at all
+    if isinstance(f, str):
+      try:
+        with open(PathManager.get_local_path(f), "r", encoding="utf-8") as fd:
+          self.add_from_file(fd)
+      except FileNotFoundError as fnfe:
+        raise fnfe
+      except UnicodeError:
+        raise Exception(
+          "Incorrect encoding detected in {}, please "
+          "rebuild the dataset".format(f)
+        )
+      return
 
+      lines = f.readlines()
+      indices_start_line = self._load_meta(lines)
+
+      for line in lines[indices_start_line:]:
+        try:
+          line = line.rstrip()
+          if line.endswith("#fairseq:overwrite"):
+            overwrite = True
+            line, _ = line.rsplit(" ", 1)
+          else:
+            overwrite = False
+            word = line
+            if word in self and not overwrite:
+              raise RuntimeError(
+                "Duplicate word found when loading Dictionary: '{}'. "
+                "Duplicate words can overwrite earlier ones by adding the "
+                "#fairseq:overwrite flag at the end of the corresponding row "
+                "in the dictionary file. If using the Camembert model, please "
+                "download an updated copy of the model file.".format(word)
+                )
+              self.add_symbol(word, overwrite=overwrite)
+            except ValueError:
+              raise ValueError(
+                "Incorrect dictionary format, expected '<token> [flags]'"
+                )
+
+  # these two methods are unneeded, because with encode_line and such
+  # properly implemented here, the static methods on Dictionary being called from
+  # LegacyFairseqTask will do just fine
   @staticmethod
   def _add_file_to_dictionary_single_worker(
     filename, tokenize, eos_word, worker_id=0, num_workers=1
