@@ -1,15 +1,15 @@
 import torch.nn as nn
 from typing import Any, Dict, Optional
-from fairseq.models import (
+from fairseq.models import register_model
+from fairseq.models.transformer import (
   TransformerModel,
-  TransformerDecoder,
-  register_model
+  TransformerDecoder
 )
 from fairseq.models.fairseq_encoder import EncoderOut
 from fairseq.modules import AdaptiveSoftmax
 from torch import Tensor
 
-@register_model('tagged-transformer')
+@register_model('tagged_transformer')
 class TaggedTransformerModel(TransformerModel):
   """
   Tagged Transformer architecture, with:
@@ -36,7 +36,7 @@ class TaggedTransformerModel(TransformerModel):
   @staticmethod
   def add_args(parser):
     super().add_args(parser) # this will fail, the method is static :(
-    parser. # ??? any additional arguments needed ? for instance to specify dictionaries
+    # parser. # ??? any additional arguments needed ? for instance to specify dictionaries
 
   @classmethod
   def build_embedding(cls, args, dictionary, embed_dim, path=None):

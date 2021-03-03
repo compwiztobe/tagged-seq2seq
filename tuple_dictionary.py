@@ -223,10 +223,10 @@ class TupleDictionary(Dictionary):
                 "download an updated copy of the model file.".format(word)
                 )
               self.add_symbol(word, overwrite=overwrite)
-            except ValueError:
-              raise ValueError(
-                "Incorrect dictionary format, expected '<token> [flags]'"
-                )
+        except ValueError:
+          raise ValueError(
+            "Incorrect dictionary format, expected '<token> [flags]'"
+            )
 
   # these two methods are unneeded, because with encode_line and such
   # properly implemented here, the static methods on Dictionary being called from
