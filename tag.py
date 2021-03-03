@@ -40,7 +40,7 @@ def main(args):
 
   for tagged_sentence in tag_sentences(tagger, sentences, progress=args.progress):
     if args.print_tags:
-      yield ' '.join(t.tags['ner'].value for t in tagged_sentence.tokens)
+      yield ' '.join(t.text + args.separator + t.tags['ner'].value for t in tagged_sentence.tokens)
     token_count += len(tagged_sentence.tokens)
     sentence_count += 1
     NE_count += sum(is_NE(token) for token in tagged_sentence.tokens)
@@ -59,7 +59,9 @@ parser.add_argument("-m", "--model-file", required=True,
 parser.add_argument("--stats", default=True, action='store_true',# action=argparse.BooleanOptionalAction, # python>=3.9 only
                     help="print NER tag statistics to stderr upon completion") # - if used with --print-tagged, stats go to stderr, unless another file is specified for tag outputs")
 parser.add_argument("--print-tags", default=False, action='store_true',
-                    help="print NER tags to stdout, in .bio (Flair input) format")
+                    help="print tokens with NER tags to stdout, in plain text format with separator")
+parser.add_argument("--separator", default="<&&&>",
+                    help="separator with which to join tokens and tags (to be parsed into a tuple by fairseq")
 parser.add_argument("--no-progress", dest='progress', default=True, action='store_false',
                     help="disable progress msgs on stderr")
 # parser.add_argument("--print-tags", metavar="TAG_FILE", default=False, nargs='?', const=True,
