@@ -3,6 +3,7 @@ from flair.data import Sentence
 
 import sys
 import datetime
+import logging
 
 def tag_sentences(tagger, sentences, progress=False):
   def tag_batch(batch):
@@ -36,7 +37,7 @@ def main(args):
   sentence_count = 0
   NE_count = 0
 
-  sentences = (Sentence(line) for line in sys.stdin if line.strip() != "" and not line.startswith("#"))
+  sentences = (Sentence(line.strip()) for line in sys.stdin if line.strip() != "" and not line.startswith("#"))
 
   for tagged_sentence in tag_sentences(tagger, sentences, progress=args.progress):
     if args.print_tags:
@@ -72,6 +73,8 @@ def print_StopIterator(g, file=None):
   print(stop, file=file)
 
 if __name__ == "__main__":
+  logging.getLogger('flair').handlers[0].stream = sys.stderr
+
   args = parser.parse_args()
   output = print_StopIterator(main(parser.parse_args()), file=sys.stderr)
   for line in output:
