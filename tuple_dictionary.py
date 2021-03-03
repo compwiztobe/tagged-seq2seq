@@ -153,7 +153,7 @@ class TupleDictionary(Dictionary):
     # threshold only the token vocab (use full tag vocab)
     # nwords limits only the size of the subword token vocab (again, use full tag vocab)
     # padding_factor only applies to token vocab, likely to be the largest factor and
-    # therefore guarantees the tuple vocab has the same factor, while minimizing the extra increase in size
+    # therefore guarantees the tuple vocab size has the same factor, while minimizing the extra increase in size
     if isinstance(threshold, int):
       threshold = [threshold for _ in self.dicts]
     if isinstance(nwords, int):
@@ -169,6 +169,10 @@ class TupleDictionary(Dictionary):
     for d, t, n, p in zip(self.dicts, threshold, nwords, padding_factor):
       d.finalize(t, n, p)
     # this will mess with the tuple level counts
+    # the fix would be to look through the tuple counts and find those with factors that were
+    # cut out of the factor dictionaries, replace them unk, and merge counts to the tuple with
+    # unk for that factor
+    # but that's not really a priority
 
   def pad_to_multiple_(self, padding_factor):
     raise NotImplementedError
