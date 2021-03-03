@@ -92,18 +92,16 @@ class TupleDictionary(Dictionary):
   def string(
     self,
     tensor,
-    factored_indices=False,
-    separator=" ",
     bpe_symbols=None,
     escape_unks=False,
     extra_symbols_to_ignore=None,
     unk_strings=None,
-    **kwargs
+    factored_indices=False,
+    as_tuple=False
   ):
-    # raise NotImplementedError
     if is_tensor(tensor) and tensor.dim() == 2 + factored_indices:
       return "\n".join(
-        self.string(t, factored_indices, bpe_symbols, escape_unks, extra_symbols_to_ignore, unk_strings)
+        self.string(t, bpe_symbols, escape_unks, extra_symbols_to_ignore, unk_strings, factored_indices, as_tuple)
         for t in tensor
       )
 
@@ -128,7 +126,10 @@ class TupleDictionary(Dictionary):
       for d, indices, bpe_symbol, escape_unk, extra_symbols, unk_string
       in zip(self.dicts, zip(*tensor), bpe_symbols, escape_unks, extra_symbols_to_ignore, unk_strings)
     ]
-    return " ".join(separator.join(t) for t in zip(*strings))
+    if as_tuple:
+      return " ".join(str(t) for t in zip(*strings))
+    else:
+      return " ".join(self.sep.join(t) for t in zip(*strings))
 
   def add_symbol(self, word, n=1, overwrite=False, as_tuple=False):
     if not as_tuple:
