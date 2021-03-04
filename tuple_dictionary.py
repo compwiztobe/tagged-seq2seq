@@ -9,20 +9,41 @@ class TupleDictionary(Dictionary):
   convert multiple dictionaries with their own indices
   into a single dictionary with factored indices
   """
-  def __init__(self, sep, *dicts):
+  def __init__(self, sep="<&&&>", factors=None, dicts=None):
+    assert factors is not None or dicts is not None
     self.sep = sep
+    if dicts is None:
+      dicts = [Dictionary() for _ in range(factors)]
     self.dicts = dicts
     self.counts = Counter()
     self.bos_word, self.unk_word, self.pad_word, self.eos_word = [
-      tuple(getattr(d, attr) for d in dicts)
+      sep.join(getattr(d, attr) for d in dicts)
       for attr in ['bos_word', 'unk_word', 'pad_word', 'eos_word']
     ]
-    self.bos_index, self.unk_index, self.pad_index, self.eos_index = [
-      self.compute_index(getattr(d, attr) for d in dicts)
-      for attr in ['bos_index', 'unk_index', 'pad_index', 'eos_index']
-    ]
+    # this doesn't work with the underlying symbol sets and index factorizations changing
+    # self.bos_index, self.unk_index, self.pad_index, self.eos_index = [
+    #   self.compute_index(getattr(d, attr) for d in dicts)
+    #   for attr in ['bos_index', 'unk_index', 'pad_index', 'eos_index']
+    # ]
+    # this also doesn't work, it's not an instance member, only a parameter to the constructor
     # self.extra_special_symbols = product(d.extra_special_symbols for d in dicts)
     self.nspecial = prod(d.nspecial for d in dicts)
+
+  @property
+  def bos_index(self):
+    return self.compute_index(d.bos_index for d in self.dicts)
+
+  @property
+  def unk_index(self):
+    return self.compute_index(d.unk_index for d in self.dicts)
+
+  @property
+  def pad_index(self):
+    return self.compute_index(d.pad_index for d in self.dicts)
+
+  @property
+  def eos_index(self):
+    return self.compute_index(d.eos_index for d in self.dicts)
 
   # I think I've specifically implemented all instances where this might have been called
   # so this is in fact unneeded?
@@ -35,14 +56,20 @@ class TupleDictionary(Dictionary):
   def __eq__(self, other):
     return hasattr(other, 'dicts') and self.dicts == other.dicts
 
-  def __getitem__(self, index):
+  def __getitem__(self, index, as_tuple=False):
     indices = self.factor_index(index)
-    return tuple(d.symbols[i] for d, i in zip(self.dicts, indices))
+    symbols = tuple(d.symbols[i] for d, i in zip(self.dicts, indices))
+    if as_tuple:
+      return symbols
+    else:
+      return self.sep.join(symbols)
 
   def __len__(self):
     return prod(self.factors)
 
-  def __contains__(self, syms):
+  def __contains__(self, syms, as_tuple=False):
+    if not as_tuple:
+      syms = [sym.split(self.sep) for sym in syms]
     return all(sym in d.symbols for sym, d in zip(syms, self.dicts))
 
   #####
@@ -148,9 +175,9 @@ class TupleDictionary(Dictionary):
 
   def update(self, new_dict):
     assert hasattr(new_dict, 'dicts') and hasattr(new_dict, 'counts')
+    self.counts.update(new_dict.counts)
     for d1, d2 in zip(self.dicts, new_dict.dicts):
       d1.update(d2)
-    self.counts.update(new_dict.counts)
 
   def finalize(self, threshold=-1, nwords=-1, padding_factor=[8]):
     # a couple ways to finalize:
@@ -168,7 +195,7 @@ class TupleDictionary(Dictionary):
     if isinstance(nwords, int):
       nwords = [nwords for _ in self.dicts]
     if isinstance(padding_factor, int):
-      padding_factor = [padding_factor for _ in self.dicts]
+      padding_factor = [padding_factor] # for _ in self.dicts]
     if len(threshold) < len(self.dicts):
       threshold = threshold + [-1] * (len(self.dicts) - len(threshold))
     if len(nwords) < len(self.dicts):
