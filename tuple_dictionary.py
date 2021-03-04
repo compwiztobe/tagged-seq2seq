@@ -101,10 +101,31 @@ class TupleDictionary(Dictionary):
       for i in range(len(self.factors))
     )
 
+  # vectorized tensor version
+  def factor_indices(self, indices):
+    return torch.stack([
+      (indices % prod(self.factors[i:])//prod(self.factors[i+1:])).T
+      for i in range(len(self.factors))
+    ]).T
+
   def compute_index(self, indices):
     return sum(
       prod(self.factors[i+1:])*index
       for i, index in enumerate(indices)
+    )
+
+  # this should probably be constructed once upon dictionary finalize or something
+  # to save some compute, instead of building it every time we want to embed a batch
+  @property
+  def factor_indicator_map(self):
+    coords = torch.LongTensor([
+      [row for row in range(prod(dictionary_factors)) for _ in range(len(dictionary_factors))],
+      [x + sum(dictionary_factors[:i]) for idx in product(*[range(n) for n in dictionary_factors]) for i, x in enumerate(idx)]
+    ])
+    return torch.sparse.LongTensor(
+      coords,
+      torch.ones(prod(dictionary_factors) * len(dictionary_factors)),
+      torch.Size((prod(dictionary_factors), sum(dictionary_factors)))
     )
 
   #####

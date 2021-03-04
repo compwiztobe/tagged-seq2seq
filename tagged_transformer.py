@@ -173,7 +173,7 @@ def TaggedTransformerDecoder(TransformerDecoder):
       #   torch.ones(2*t*tau),
       #   torch.Size([t*tau,t+tau])
       # ) * output_projection(features) # move sparse tensor definition into constructor
-      return output_pair_map(self.dictionary.factors) * output_projection(features)
+      return self.dictionary.factor_indicator_map.mm(output_projection(features))
     else:
       return features
 
@@ -185,19 +185,7 @@ def sumEmbedding(num_embeddings, embedding_dim, padding_idx):
 
 class SumEmbedding(nn.Embedding):
   def forward(self, input):
-    input_pairs = map_to_pairs(input)
-    embeddings = super().forward(input_pairs)
-    return embeddings.sum(axis=-1) # sum on last axis, the pair axis
-
-from math import prod
-from itertools import product
-def output_pair_map(dictionary_factors):
-  coords = torch.LongTensor([
-    [row for row in range(prod(dictionary_factors)) for _ in range(len(dictionary_factors))],
-    [x + sum(dictionary_factors[:i]) for idx in product(*[range(n) for n in dictionary_factors]) for i, x in enumerate(idx)]
-  ])
-  return torch.sparse.LongTensor(
-    coords,
-    torch.ones(prod(dictionary_factors) * len(dictionary_factors)),
-    torch.Size((prod(dictionary_factors), sum(dictionary_factors)))
-  )
+    input_factors = self.dictionary.factor_indices(input)
+    embeddings = super().forward(input_factors)
+    return embeddings.sum(axis=-1) # sum on last axis, the factor index axis
+    # or use an EmbeddingBag, but that doesn't support arbitrary dimension
