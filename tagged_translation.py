@@ -1,3 +1,4 @@
+from fairseq import tokenizer
 from fairseq.data import Dictionary
 from fairseq.tasks import register_task
 from fairseq.tasks.translation import TranslationTask
@@ -35,10 +36,10 @@ class TaggedTranslationTask(TranslationTask):
         multiple of 8, which is important on some hardware (e.g., Nvidia
         Tensor Cores).
             """
-    d = TupleDictionary()
+    d = TupleDictionary(factors=2)
     for filename in filenames:
       Dictionary.add_file_to_dictionary(
         filename, d, tokenizer.tokenize_line, workers
-        )
-      d.finalize(threshold=threshold, nwords=nwords, padding_factor=padding_factor)
-      return d
+      )
+    d.finalize(threshold=threshold, nwords=nwords, padding_factor=padding_factor)
+    return d
