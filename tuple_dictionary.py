@@ -1,7 +1,7 @@
+import torch
 from math import prod # as product # requires python 3.8
 from itertools import product # as direct_product
 from collections import Counter
-from torch import is_tensor
 from fairseq.data import Dictionary
 
 class TupleDictionary(Dictionary):
@@ -24,15 +24,28 @@ class TupleDictionary(Dictionary):
     # self.extra_special_symbols = product(d.extra_special_symbols for d in dicts)
     self.nspecial = prod(d.nspecial for d in dicts)
 
+  # I think I've specifically implemented all instances where this might have been called
+  # so this is in fact unneeded?
   def __getattr__(self, attr):
     try:
       return tuple(getattr(d, attr) for d in self.dicts)
     except AttributeError:
       raise AttributeError("'%s' object has no attribute '%s'", (type(self), attr))
 
-  @property
-  def factors(self):
-    return tuple(len(d) for d in self.dicts)
+  def __eq__(self, other):
+    return hasattr(other, 'dicts') and self.dicts == other.dicts
+
+  def __getitem__(self, index):
+    indices = self.factor_index(index)
+    return tuple(d.symbols[i] for d, i in zip(self.dicts, indices))
+
+  def __len__(self):
+    return prod(self.factors)
+
+  def __contains__(self, syms):
+    return all(sym in d.symbols for sym, d in zip(syms, self.dicts))
+
+  #####
 
   @property
   def symbols(self):
@@ -49,6 +62,12 @@ class TupleDictionary(Dictionary):
       for symbols in self.symbols
     }
 
+  #####
+
+  @property
+  def factors(self):
+    return tuple(len(d) for d in self.dicts)
+
   def factor_index(self, index):
     return tuple(
       index%prod(self.factors[i:])//prod(self.factors[i+1:])
@@ -61,18 +80,7 @@ class TupleDictionary(Dictionary):
       for i, index in enumerate(indices)
     )
 
-  def __eq__(self, other):
-    return hasattr(other, 'dicts') and self.dicts == other.dicts
-
-  def __len__(self):
-    return prod(self.factors())
-
-  def __getitem__(self, index):
-    indices = self.factor_index(index)
-    return tuple(d.symbols[i] for d, i in zip(self.dicts, indices))
-
-  def __contains__(self, syms):
-    return all(sym in d.symbols for sym, d in zip(syms, self.dicts))
+  #####
 
   def index(self, syms, as_tuple=False):
     """Returns the index of the specified symbol"""
@@ -81,13 +89,6 @@ class TupleDictionary(Dictionary):
       syms = tuple(syms.split(self.sep))
     assert isinstance(syms, tuple) and len(syms) == len(self.dicts)
     return self.compute_index(d.index(sym) for d, sym in zip(self.dicts, syms))
-
-  def unk_string(self, escape=False, as_tuple=False):
-    unk = tuple(d.unk_string(escape) for d in self.dicts)
-    if as_tuple:
-      return unk
-    else:
-      return self.sep.join(unk)
 
   def string(
     self,
@@ -99,7 +100,7 @@ class TupleDictionary(Dictionary):
     factored_indices=False,
     as_tuple=False
   ):
-    if is_tensor(tensor) and tensor.dim() == 2 + factored_indices:
+    if torch.is_tensor(tensor) and tensor.dim() == 2 + factored_indices:
       return "\n".join(
         self.string(t, bpe_symbols, escape_unks, extra_symbols_to_ignore, unk_strings, factored_indices, as_tuple)
         for t in tensor
@@ -130,6 +131,13 @@ class TupleDictionary(Dictionary):
       return " ".join(str(t) for t in zip(*strings))
     else:
       return " ".join(self.sep.join(t) for t in zip(*strings))
+
+  def unk_string(self, escape=False, as_tuple=False):
+    unk = tuple(d.unk_string(escape) for d in self.dicts)
+    if as_tuple:
+      return unk
+    else:
+      return self.sep.join(unk)
 
   def add_symbol(self, word, n=1, overwrite=False, as_tuple=False):
     if not as_tuple:
@@ -177,6 +185,24 @@ class TupleDictionary(Dictionary):
 
   def pad_to_multiple_(self, padding_factor):
     raise NotImplementedError
+
+  # inherited implementations of these from Dictionary will do just fine
+  # since I've implemented self.{bos,pad,eos,unk}_index in the constructor
+  # def bos(self):
+  #   """Helper to get index of beginning-of-sentence symbol"""
+  #   return self.bos_index
+
+  # def pad(self):
+  #   """Helper to get index of pad symbol"""
+  #   return self.pad_index
+
+  # def eos(self):
+  #   """Helper to get index of end-of-sentence symbol"""
+  #   return self.eos_index
+
+  # def unk(self):
+  #   """Helper to get index of unk symbol"""
+  #   return self.unk_index
 
   # need this inherited from Dictionary, since LegacyFairseqTask calls it on the task's
   # dictionary class (not statically)
@@ -227,6 +253,45 @@ class TupleDictionary(Dictionary):
           raise ValueError(
             "Incorrect dictionary format, expected '<token> [flags]'"
           )
+
+  # inherited implementations of these from Dictionary will do just fine
+  # (Python does not mangle protected member names - those with a single underscore)
+  # def _save(self, f, kv_iterator):
+  #   if isinstance(f, str):
+  #     PathManager.mkdirs(os.path.dirname(f))
+  #     with PathManager.open(f, "w", encoding="utf-8") as fd:
+  #       return self.save(fd)
+  #   for k, v in kv_iterator:
+  #     print("{} {}".format(k, v), file=f)
+
+  # def _get_meta(self):
+  #   return [], []
+
+  # def _load_meta(self, lines):
+  #   return 0
+
+  def save(self, f):
+    """Stores dictionary into a text file"""
+    # ex_keys, ex_vals = self._get_meta()
+    symbols = list(product(*[d.symbols[d.nspecial:] for d in self.dicts]))
+    counts = [self.counts[symbol] for symbol in symbols]
+    self._save(
+      f,
+      zip(
+        # ex_keys + self.symbols[self.nspecial :],
+        # ex_vals + self.count[self.nspecial :],
+        [self.sep.join(sym) for sym in symbols],
+        counts,
+      ),
+    )
+
+  def dummy_sentence(self, length):
+    ts = [d.dummy_sentence(length) for d in self.dicts]
+    return torch.Tensor([self.compute_index(t) for t in zip(*ts)])
+
+  # inherited implementation works fine, with add_symbol and index implemented correctly
+  # def encode_line(self):
+  #   raise NotImplementedError
 
   # these two methods are unneeded, because with encode_line and such
   # properly implemented here, the static methods on Dictionary being called from
