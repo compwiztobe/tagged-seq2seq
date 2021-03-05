@@ -36,7 +36,14 @@ class TaggedTranslationTask(TranslationTask):
         multiple of 8, which is important on some hardware (e.g., Nvidia
         Tensor Cores).
             """
-    d = TupleDictionary(factors=2)
+
+    # read first line to determine separator and factor count
+    with open(PathManager.get_local_path(filenames[0]), "r", encoding="utf-8") as f:
+      first_token = tokenizer.tokenize_line(f.readline())[0]
+      sep = ???
+      factors = len(first_token.split(sep))
+
+    d = TupleDictionary(sep, factors=factors)
     for filename in filenames:
       Dictionary.add_file_to_dictionary(
         filename, d, tokenizer.tokenize_line, workers

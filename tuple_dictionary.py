@@ -1,3 +1,5 @@
+import io
+
 import torch
 from math import prod # as product # requires python 3.8
 from itertools import product # as direct_product
@@ -252,21 +254,12 @@ class TupleDictionary(Dictionary):
   #   """Helper to get index of unk symbol"""
   #   return self.unk_index
 
-  # need this inherited from Dictionary, since LegacyFairseqTask calls it on the task's
-  # dictionary class (not statically)
-  # @classmethod
-  # def load(cls, f):
-  #   raise NotImplementedError
-
-  def add_from_file(self, f):
-    # loop through the file as in inherited implementation,
-    # but splitting vocab entries on sep and adding to appropriate factor dictionaries
-    # actually this is no different from inherited implementation, and so with count support
-    # at tuple level (and add_symbol properly implemented), this would not be needed at all
+  @classmethod
+  def load(cls, f):
     if isinstance(f, str):
       try:
         with open(PathManager.get_local_path(f), "r", encoding="utf-8") as fd:
-          self.add_from_file(fd)
+          return cls.load(fd)
       except FileNotFoundError as fnfe:
         raise fnfe
       except UnicodeError:
@@ -274,64 +267,41 @@ class TupleDictionary(Dictionary):
           "Incorrect encoding detected in {}, please "
           "rebuild the dataset".format(f)
         )
-      return
 
+    # read factor header, then separate factor dict lines into their own streams for loading
+    try:
+      header = f.readline().strip()
+      assert header.startswith("# factor ")
+      factors = tuple(int(f) for f in header.split()[2:])
+      assert len(factors) > 1
       lines = f.readlines()
-      indices_start_line = self._load_meta(lines)
+      assert len(lines) == sum(factors)
+      factor_streams = [io.IOStream(lines[1:1+sum(factors[:i+1])]) for i in range(len(factors))]
+    except (AssertionError, ValueError):
+      raise ValueError(
+        "Incorrect dictionary format, expected '# factor [factors]', "
+        "followed by that many lines for each factor dictionary."
+      )
 
-      for line in lines[indices_start_line:]:
-        try:
-          line = line.rstrip()
-          if line.endswith("#fairseq:overwrite"):
-            overwrite = True
-            line, _ = line.rsplit(" ", 1)
-          else:
-            overwrite = False
-            word = line
-            if word in self and not overwrite:
-              raise RuntimeError(
-                "Duplicate word found when loading Dictionary: '{}'. "
-                "Duplicate words can overwrite earlier ones by adding the "
-                "#fairseq:overwrite flag at the end of the corresponding row "
-                "in the dictionary file. If using the Camembert model, please "
-                "download an updated copy of the model file.".format(word)
-                )
-              self.add_symbol(word, overwrite=overwrite)
-        except ValueError:
-          raise ValueError(
-            "Incorrect dictionary format, expected '<token> [flags]'"
-          )
-
-  # inherited implementations of these from Dictionary will do just fine
-  # (Python does not mangle protected member names - those with a single underscore)
-  # def _save(self, f, kv_iterator):
-  #   if isinstance(f, str):
-  #     PathManager.mkdirs(os.path.dirname(f))
-  #     with PathManager.open(f, "w", encoding="utf-8") as fd:
-  #       return self.save(fd)
-  #   for k, v in kv_iterator:
-  #     print("{} {}".format(k, v), file=f)
-
-  # def _get_meta(self):
-  #   return [], []
-
-  # def _load_meta(self, lines):
-  #   return 0
+    dicts = [Dictionary.load(factor_stream) for factor_stream in factor_streams]
+    return cls(sep, dicts=dicts)
 
   def save(self, f):
-    """Stores dictionary into a text file"""
-    # ex_keys, ex_vals = self._get_meta()
-    symbols = list(product(*[d.symbols[d.nspecial:] for d in self.dicts]))
-    counts = [self.counts[symbol] for symbol in symbols]
-    self._save(
-      f,
-      zip(
-        # ex_keys + self.symbols[self.nspecial :],
-        # ex_vals + self.count[self.nspecial :],
-        [self.sep.join(sym) for sym in symbols],
-        counts,
-      ),
-    )
+    """Stores dictionary into a text file
+        a header line lists the factor dict sizes
+        then factor dicts are concatenated in order
+    """
+    if isinstance(f, str):
+      PathManager.mkdirs(os.path.dirname(f))
+      with PathManager.open(f, "w", encoding="utf-8") as fd:
+        return self.save(fd)
+
+    # print a header that will throw an error if we try to load as a normal dict
+    header = "# factors " + " ".join(str(len(d) - d.nspecial) for d in self.dicts)
+    print(header, file=f)
+
+    for d in self.dicts:
+      d.save(f)
 
   def dummy_sentence(self, length):
     ts = [d.dummy_sentence(length) for d in self.dicts]
