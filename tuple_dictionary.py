@@ -204,7 +204,7 @@ class TupleDictionary(Dictionary):
     for d1, d2 in zip(self.dicts, new_dict.dicts):
       d1.update(d2)
 
-  def finalize(self, threshold=-1, nwords=-1, padding_factor=[8]):
+  def finalize(self, threshold=-1, nwords=-1, padding_factor=8):
     # a couple ways to finalize:
     # threshold, nwords, and padding_factor can be applied at the tuple level
     # though this may complicate how it propagates to the factor dictionaries
@@ -215,25 +215,18 @@ class TupleDictionary(Dictionary):
     # nwords limits only the size of the subword token vocab (again, use full tag vocab)
     # padding_factor only applies to token vocab, likely to be the largest factor and
     # therefore guarantees the tuple vocab size has the same factor, while minimizing the extra increase in size
-    if isinstance(threshold, int):
-      threshold = [threshold for _ in self.dicts]
-    if isinstance(nwords, int):
-      nwords = [nwords for _ in self.dicts]
-    if isinstance(padding_factor, int):
-      padding_factor = [padding_factor] # for _ in self.dicts]
-    if len(threshold) < len(self.dicts):
-      threshold = threshold + [-1] * (len(self.dicts) - len(threshold))
-    if len(nwords) < len(self.dicts):
-      nwords = nwords + [-1] * (len(self.dicts) - len(nwords))
-    if len(padding_factor) < len(self.dicts):
-      padding_factor = padding_factor + [1] * (len(self.dicts) - len(padding_factor))
-    for d, t, n, p in zip(self.dicts, threshold, nwords, padding_factor):
-      d.finalize(t, n, p)
+    # crucially though, preprocessing args can only accept one int for each of these parameters
+    # so we will settle for applying them to the first (largest) factor dictionary
+    # while leaving the remaining factors untouched (they are likely to be small tag sets)
+    self.dicts[0].finalize(threshold, nwords, padding_factor)
+    for d in self.dicts[1:]:
+      d.finalize(padding_factor=1)
     # this will mess with the tuple level counts
     # the fix would be to look through the tuple counts and find those with factors that were
     # cut out of the factor dictionaries, replace them unk, and merge counts to the tuple with
     # unk for that factor
-    # but that's not really a priority
+    # but that's not really a priority, as anyway we're saving the dict file as factor dicts concatented
+    # so that histogramming can consider only the largest factor for thresholding
 
   def pad_to_multiple_(self, padding_factor):
     raise NotImplementedError
@@ -281,7 +274,10 @@ class TupleDictionary(Dictionary):
       assert len(factors) > 1
       lines = f.readlines()
       assert len(lines) == sum(factors)
-      factor_streams = [io.IOStream(lines[1:1+sum(factors[:i+1])]) for i in range(len(factors))]
+      factor_dicts = [
+        io.StringIO(''.join(lines[sum(factors[:i]):sum(factors[:i+1])]))
+        for i in range(len(factors))
+      ]
     except (AssertionError, ValueError):
       raise ValueError(
         "Incorrect dictionary format, expected"
@@ -290,7 +286,7 @@ class TupleDictionary(Dictionary):
         "followed by that many lines for each factor dictionary."
       )
 
-    dicts = [Dictionary.load(factor_stream) for factor_stream in factor_streams]
+    dicts = [Dictionary.load(factor_dict) for factor_dict in factor_dicts]
     return cls(sep, dicts=dicts)
 
   def save(self, f):

@@ -12,7 +12,7 @@ from .tuple_dictionary import TupleDictionary
 class TaggedTranslationTask(TranslationTask):
   @staticmethod
   def add_args(parser):
-    pass
+    TranslationTask.add_args(parser)
 
   @classmethod
   def load_dictionary(cls, filename):
