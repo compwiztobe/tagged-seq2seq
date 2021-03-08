@@ -161,6 +161,7 @@ def TaggedTransformerDecoder(TransformerDecoder):
        we should get P(token, tag) = P(token)P(tag) = exp(prodvector_token,tag)/sum_otherpairs exp(prodvector_otherpair)
        so that
        prodvector_token,tag = vector_token + vector_tag
+       the same derivation holds for softmax instead of exp
        remember this is scalar math (talking about individual elements, not vectors)
     """
     if self.adaptive_softmax is None:

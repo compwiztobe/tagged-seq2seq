@@ -271,15 +271,20 @@ class TupleDictionary(Dictionary):
     # read factor header, then separate factor dict lines into their own streams for loading
     try:
       header = f.readline().strip()
-      assert header.startswith("# factor ")
-      factors = tuple(int(f) for f in header.split()[2:])
+      assert header.startswith("# factors ")
+      factors = tuple(int(f) for f in header.split()[2:]) # header.remove_prefix("# factors ").split()
+      header = f.readline().strip()
+      assert header.startswith("# sep ")
+      sep = header.split()[-1] # header.remove_prefix("# sep ")
       assert len(factors) > 1
       lines = f.readlines()
       assert len(lines) == sum(factors)
       factor_streams = [io.IOStream(lines[1:1+sum(factors[:i+1])]) for i in range(len(factors))]
     except (AssertionError, ValueError):
       raise ValueError(
-        "Incorrect dictionary format, expected '# factor [factors]', "
+        "Incorrect dictionary format, expected"
+        "'# factor [factors]' and "
+        "'# sep [sep]',"
         "followed by that many lines for each factor dictionary."
       )
 
@@ -298,6 +303,8 @@ class TupleDictionary(Dictionary):
 
     # print a header that will throw an error if we try to load as a normal dict
     header = "# factors " + " ".join(str(len(d) - d.nspecial) for d in self.dicts)
+    print(header, file=f)
+    header = "# sep " + self.sep
     print(header, file=f)
 
     for d in self.dicts:

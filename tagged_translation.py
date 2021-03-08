@@ -7,9 +7,12 @@ from .tuple_dictionary import TupleDictionary
 
 @register_task('tagged_translation')
 class TaggedTranslationTask(TranslationTask):
+  sep = None
+
   @staticmethod
   def add_args(parser):
-    pass
+    parser.add_argument('--sep', type=str, required=True,
+                        help='separator for parsing factors from tuples')
 
   @classmethod
   def load_dictionary(cls, filename):
@@ -37,13 +40,15 @@ class TaggedTranslationTask(TranslationTask):
         Tensor Cores).
             """
 
-    # read first line to determine separator and factor count
+    print(cls.sep)
+    return
+
+    # read first line to determine factor count
     with open(PathManager.get_local_path(filenames[0]), "r", encoding="utf-8") as f:
       first_token = tokenizer.tokenize_line(f.readline())[0]
-      sep = ???
-      factors = len(first_token.split(sep))
+      factors = len(first_token.split(cls.sep))
 
-    d = TupleDictionary(sep, factors=factors)
+    d = TupleDictionary(cls.sep, factors=factors)
     for filename in filenames:
       Dictionary.add_file_to_dictionary(
         filename, d, tokenizer.tokenize_line, workers
