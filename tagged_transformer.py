@@ -1,9 +1,10 @@
 import torch.nn as nn
 from typing import Any, Dict, Optional
-from fairseq.models import register_model
+from fairseq.models import register_model, register_model_architecture
 from fairseq.models.transformer import (
   TransformerModel,
-  TransformerDecoder
+  TransformerDecoder,
+  base_architecture as transformer_base_architecture
 )
 from fairseq.models.fairseq_encoder import EncoderOut
 from fairseq.modules import AdaptiveSoftmax
@@ -28,22 +29,22 @@ class TaggedTransformerModel(TransformerModel):
     :prog:
   """
 
-  def __init__(self, args, encoder, decoder):
-    super().__init__(encoder, decoder)
-    self.args = args
-    self.supports_align_args = True
+  # def __init__(self, args, encoder, decoder):
+  #   super().__init__(args, encoder, decoder)
+  #   self.args = args
+  #   self.supports_align_args = True
 
   @staticmethod
   def add_args(parser):
-    super().add_args(parser) # this will fail, the method is static :(
+    TransformerModel.add_args(parser)
     # parser. # ??? any additional arguments needed ? for instance to specify dictionaries
 
   @classmethod
   def build_embedding(cls, args, dictionary, embed_dim, path=None):
     num_embeddings = sum(dictionary.factors) # ??? requires impl
-    padding_idx = concat(dictionary.pad()) # ???
+    padding_idx = dictionary.pad() # concat(dictionary.pad()) # ???
 
-    emb = sumEmbedding(num_embeddings, embed_dim, padding_idx)
+    emb = sumEmbedding(dictionary, num_embeddings, embed_dim, padding_idx)
     # if provided, load from preloaded dictionaries
     if path:
       embed_dict = utils.parse_embedding(path)
@@ -59,7 +60,7 @@ class TaggedTransformerModel(TransformerModel):
       no_encoder_attn=getattr(args, "no_cross_attention", False),
     )
 
-def TaggedTransformerDecoder(TransformerDecoder):
+class TaggedTransformerDecoder(TransformerDecoder):
   """
   Tagged Transformer decoder consisting of *args.decoder_layers* layers. Each layer
   is a :class:`TransformerDecoderLayer`.
@@ -71,8 +72,8 @@ def TaggedTransformerDecoder(TransformerDecoder):
     no_encoder_attn (bool, optional): whether to attend to encoder outputs
         (default: False).
   """
-  def __init__(self, args, dictionaries, embed_tokens, no_encoder_attn=False):
-    super().__init__(self, args, dictionaries[0], embed_tokens, no_encoder_attn)
+  def __init__(self, args, dictionary, embed_tokens, no_encoder_attn=False):
+    super().__init__(args, dictionary, embed_tokens, no_encoder_attn=no_encoder_attn)
     if args.adaptive_softmax_cutoff is not None:
       self.adaptive_softmax = [self.adaptive_softmax] + [
         AdaptiveSoftmax(
@@ -93,7 +94,6 @@ def TaggedTransformerDecoder(TransformerDecoder):
         bias=False,
       )
       output_projection.weight = self.embed_tokens.weight
-      output_pair_transform = output_pair_map(dictionary.factors)
     else:
       # probably better compute all than reuse the first, which may change with fairseq versions...
       self.output_projection = [self.output_projection] + [
@@ -178,15 +178,24 @@ def TaggedTransformerDecoder(TransformerDecoder):
     else:
       return features
 
-def sumEmbedding(num_embeddings, embedding_dim, padding_idx):
-  m = SumEmbedding(num_embeddings, embedding_dim, padding_idx=padding_idx)
+def sumEmbedding(dictionary, num_embeddings, embedding_dim, padding_idx):
+  m = SumEmbedding(dictionary, num_embeddings, embedding_dim, padding_idx=padding_idx)
   nn.init.normal_(m.weight, mean=0, std=embedding_dim ** -0.5)
   nn.init.constant_(m.weight[padding_idx], 0)
   return m
 
 class SumEmbedding(nn.Embedding):
+  def __init__(self, dictionary, *args, **kwargs):
+    self.dictionary = dictionary
+    super().__init__(*args, **kwargs)
+
   def forward(self, input):
-    input_factors = self.dictionary.factor_indices(input)
+    input_factors = self.dictionary.factor_indices(input, for_embedding=True)
     embeddings = super().forward(input_factors)
     return embeddings.sum(axis=-1) # sum on last axis, the factor index axis
     # or use an EmbeddingBag, but that doesn't support arbitrary dimension
+
+
+@register_model_architecture("tagged_transformer", "tagged_transformer")
+def base_architecture(args):
+  transformer_base_architecture(args)

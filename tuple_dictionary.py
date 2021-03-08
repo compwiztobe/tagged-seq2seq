@@ -106,11 +106,17 @@ class TupleDictionary(Dictionary):
     )
 
   # vectorized tensor version
-  def factor_indices(self, indices):
-    return torch.stack([
+  def factor_indices(self, indices, for_embedding=False):
+    factored_indices = [
       (indices % prod(self.factors[i:])//prod(self.factors[i+1:])).T
       for i in range(len(self.factors))
-    ]).T
+    ]
+    if for_embedding:
+      return torch.stack([
+        indices + sum(self.factors[:i]) for i, indices in enumerate(factored_indices)
+      ]).T
+    else:
+      return torch.stack(factored_indices).T
 
   def compute_index(self, indices):
     return sum(
@@ -168,7 +174,7 @@ class TupleDictionary(Dictionary):
       unk_strings = [None for _ in self.dicts]
 
     if not factored_indices:
-      tensor = [self.factor_index(i) for i in tensor]
+      tensor = self.factor_indices(tensor)
     print(tensor)
     print(list(zip(*tensor)))
     strings = [
