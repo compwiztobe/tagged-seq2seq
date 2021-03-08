@@ -1,10 +1,12 @@
 import io
-
-import torch
+import os
 from math import prod # as product # requires python 3.8
 from itertools import product # as direct_product
 from collections import Counter
+
+import torch
 from fairseq.data import Dictionary
+from fairseq.file_io import PathManager
 
 class TupleDictionary(Dictionary):
   """
@@ -49,11 +51,11 @@ class TupleDictionary(Dictionary):
 
   # I think I've specifically implemented all instances where this might have been called
   # so this is in fact unneeded?
-  def __getattr__(self, attr):
-    try:
-      return tuple(getattr(d, attr) for d in self.dicts)
-    except AttributeError:
-      raise AttributeError("'%s' object has no attribute '%s'", (type(self), attr))
+  # def __getattr__(self, attr):
+  #   try:
+  #     return tuple(getattr(d, attr) for d in self.dicts)
+  #   except AttributeError:
+  #     raise AttributeError("'%s' object has no attribute '%s'", (type(self), attr))
 
   def __eq__(self, other):
     return hasattr(other, 'dicts') and self.dicts == other.dicts

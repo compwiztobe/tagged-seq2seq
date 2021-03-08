@@ -1,5 +1,8 @@
+import os
+
 from fairseq import tokenizer
 from fairseq.data import Dictionary
+from fairseq.file_io import PathManager
 from fairseq.tasks import register_task
 from fairseq.tasks.translation import TranslationTask
 
@@ -7,12 +10,9 @@ from .tuple_dictionary import TupleDictionary
 
 @register_task('tagged_translation')
 class TaggedTranslationTask(TranslationTask):
-  sep = None
-
   @staticmethod
   def add_args(parser):
-    parser.add_argument('--sep', type=str, required=True,
-                        help='separator for parsing factors from tuples')
+    pass
 
   @classmethod
   def load_dictionary(cls, filename):
@@ -40,15 +40,15 @@ class TaggedTranslationTask(TranslationTask):
         Tensor Cores).
             """
 
-    print(cls.sep)
-    return
+    # read sep from environment variable
+    sep = os.environ['TAG_SEP'] # default to something?
 
-    # read first line to determine factor count
+    # read first tuple to determine factor count
     with open(PathManager.get_local_path(filenames[0]), "r", encoding="utf-8") as f:
       first_token = tokenizer.tokenize_line(f.readline())[0]
-      factors = len(first_token.split(cls.sep))
+      factors = len(first_token.split(sep))
 
-    d = TupleDictionary(cls.sep, factors=factors)
+    d = TupleDictionary(sep, factors=factors)
     for filename in filenames:
       Dictionary.add_file_to_dictionary(
         filename, d, tokenizer.tokenize_line, workers
