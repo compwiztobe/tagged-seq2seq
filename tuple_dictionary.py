@@ -129,14 +129,14 @@ class TupleDictionary(Dictionary):
   @property
   def factor_indicator_map(self):
     coords = torch.LongTensor([
-      [row for row in range(prod(dictionary_factors)) for _ in range(len(dictionary_factors))],
-      [x + sum(dictionary_factors[:i]) for idx in product(*[range(n) for n in dictionary_factors]) for i, x in enumerate(idx)]
+      [row for row in range(prod(self.factors)) for _ in range(len(self.factors))],
+      [x + sum(self.factors[:i]) for idx in product(*[range(n) for n in self.factors]) for i, x in enumerate(idx)]
     ])
     return torch.sparse.LongTensor(
       coords,
-      torch.ones(prod(dictionary_factors) * len(dictionary_factors)),
-      torch.Size((prod(dictionary_factors), sum(dictionary_factors)))
-    )
+      torch.ones(prod(self.factors) * len(self.factors)),
+      torch.Size((prod(self.factors), sum(self.factors)))
+    ).cuda()
 
   #####
 

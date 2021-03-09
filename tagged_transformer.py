@@ -88,12 +88,12 @@ class TaggedTransformerDecoder(TransformerDecoder):
       ] # ??? this will need to function like a single adaptive_softmax
       # but somehow combining results in an outer product fashion the results from multiple
     elif self.share_input_output_embed:
-      output_projection = nn.Linear(
+      self.output_projection = nn.Linear(
         self.embed_tokens.weight.shape[1],
         self.embed_tokens.weight.shape[0],
         bias=False,
       )
-      output_projection.weight = self.embed_tokens.weight
+      self.output_projection.weight = self.embed_tokens.weight
     else:
       # probably better compute all than reuse the first, which may change with fairseq versions...
       self.output_projection = [self.output_projection] + [
@@ -174,9 +174,19 @@ class TaggedTransformerDecoder(TransformerDecoder):
       #   torch.ones(2*t*tau),
       #   torch.Size([t*tau,t+tau])
       # ) * output_projection(features) # move sparse tensor definition into constructor
-      return self.dictionary.factor_indicator_map.mm(output_projection(features))
+      # return torch.tensordot(
+      #   self.output_projection(features),
+      #   self.dictionary.factor_indicator_map,
+      #   dims=([-1],[-1]) # last dim of projection and of indicator map is the factor term dimension (which token or tag)
+      # )
+      return batch_mm(
+        self.dictionary.factor_indicator_map, self.output_projection(features).transpose(-1,-2)
+      ).transpose(-1,-2)
+      # sparse matrix must be first matrix factor in matmul, and we need to transpose
+      # matrix axes of projection to match dimensions for matmul
     else:
       return features
+
 
 def sumEmbedding(dictionary, num_embeddings, embedding_dim, padding_idx):
   m = SumEmbedding(dictionary, num_embeddings, embedding_dim, padding_idx=padding_idx)
@@ -192,8 +202,23 @@ class SumEmbedding(nn.Embedding):
   def forward(self, input):
     input_factors = self.dictionary.factor_indices(input, for_embedding=True)
     embeddings = super().forward(input_factors)
-    return embeddings.sum(axis=-1) # sum on last axis, the factor index axis
+    return embeddings.sum(axis=-2) # last axis is embedding vectors, factors along second to last
     # or use an EmbeddingBag, but that doesn't support arbitrary dimension
+
+
+# https://github.com/pytorch/pytorch/issues/14489#issuecomment-607730242
+def batch_mm(matrix, matrix_batch):
+  """
+  :param matrix: Sparse or dense matrix, size (m, n).
+  :param matrix_batch: Batched dense matrices, size (b, n, k).
+  :return: The batched matrix-matrix product, size (m, n) x (b, n, k) = (b, m, k).
+  """
+  batch_size = matrix_batch.shape[0]
+  # Stack the vector batch into columns. (b, n, k) -> (n, b, k) -> (n, b*k)
+  vectors = matrix_batch.transpose(0, 1).reshape(matrix.shape[1], -1)
+  # A matrix-matrix product is a batched matrix-vector product of the columns.
+  # And then reverse the reshaping. (m, n) x (n, b*k) = (m, b*k) -> (m, b, k) -> (b, m, k)
+  return matrix.mm(vectors).reshape(matrix.shape[0], batch_size, -1).transpose(1, 0)
 
 
 @register_model_architecture("tagged_transformer", "tagged_transformer")
