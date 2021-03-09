@@ -2,6 +2,7 @@ import io
 import os
 from math import prod # as product # requires python 3.8
 from itertools import product # as direct_product
+from functools import cached_property
 from collections import Counter
 
 import torch
@@ -126,7 +127,7 @@ class TupleDictionary(Dictionary):
 
   # this should probably be constructed once upon dictionary finalize or something
   # to save some compute, instead of building it every time we want to embed a batch
-  @property
+  @cached_property
   def factor_indicator_map(self):
     coords = torch.LongTensor([
       [row for row in range(prod(self.factors)) for _ in range(len(self.factors))],
