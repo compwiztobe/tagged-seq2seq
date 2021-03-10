@@ -128,16 +128,20 @@ class TupleDictionary(Dictionary):
   # this should probably be constructed once upon dictionary finalize or something
   # to save some compute, instead of building it every time we want to embed a batch
   @cached_property
-  def factor_indicator_map(self):
+  def _factor_indicator_map(self):
+    constructor = lambda args: torch.sparse.LongTensor(*args).cuda()
     coords = torch.LongTensor([
       [row for row in range(prod(self.factors)) for _ in range(len(self.factors))],
       [x + sum(self.factors[:i]) for idx in product(*[range(n) for n in self.factors]) for i, x in enumerate(idx)]
     ])
-    return torch.sparse.LongTensor(
-      coords,
-      torch.ones(prod(self.factors) * len(self.factors)),
-      torch.Size((prod(self.factors), sum(self.factors)))
-    ).cuda()
+    values = torch.ones(prod(self.factors) * len(self.factors))
+    size = torch.Size((prod(self.factors), sum(self.factors)))
+    return constructor, (coords, values, size)
+
+  @property
+  def factor_indicator_map(self):
+    constructor, args = self._factor_indicator_map
+    return constructor(args)
 
   #####
 
@@ -335,14 +339,3 @@ class TupleDictionary(Dictionary):
   @staticmethod
   def add_file_to_dictionary(filename, dict, tokenize, num_workers):
     raise NotImplementedError
-
-
-# sparse tensor pickling
-# https://github.com/pytorch/pytorch/issues/16667#issuecomment-515638020
-def _sparse_tensor_constructor(indices, values, size):
-  return torch.sparse.FloatTensor(indices, values, size).coalesce() # not coalesced from the default constructor
-
-def _reduce(self):
-  return _sparse_tensor_constructor, (self._indices(), self._values(), self.size())
-
-torch.sparse.LongTensor.__reduce__ = _reduce
