@@ -335,3 +335,14 @@ class TupleDictionary(Dictionary):
   @staticmethod
   def add_file_to_dictionary(filename, dict, tokenize, num_workers):
     raise NotImplementedError
+
+
+# sparse tensor pickling
+# https://github.com/pytorch/pytorch/issues/16667#issuecomment-515638020
+def _sparse_tensor_constructor(indices, values, size):
+  return torch.sparse.FloatTensor(indices, values, size).coalesce() # not coalesced from the default constructor
+
+def _reduce(self):
+  return _sparse_tensor_constructor, (self._indices(), self._values(), self.size())
+
+torch.sparse.LongTensor.__reduce__ = _reduce
