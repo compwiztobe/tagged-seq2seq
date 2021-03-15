@@ -167,8 +167,6 @@ class TupleDictionary(Dictionary):
 
     if not factored_indices:
       tensor = self.factor_indices(tensor)
-    print(tensor)
-    print(list(zip(*tensor)))
     strings = [
       [
         d.string([index], **kwargs)
