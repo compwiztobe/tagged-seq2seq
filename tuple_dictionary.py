@@ -129,19 +129,18 @@ class TupleDictionary(Dictionary):
   # to save some compute, instead of building it every time we want to embed a batch
   @cached_property
   def _factor_indicator_map(self):
-    constructor = lambda args: torch.sparse.LongTensor(*args).cuda()
     coords = torch.LongTensor([
       [row for row in range(prod(self.factors)) for _ in range(len(self.factors))],
       [x + sum(self.factors[:i]) for idx in product(*[range(n) for n in self.factors]) for i, x in enumerate(idx)]
     ])
     values = torch.ones(prod(self.factors) * len(self.factors))
     size = torch.Size((prod(self.factors), sum(self.factors)))
-    return constructor, (coords, values, size)
+    return coords, values, size
 
   @property
   def factor_indicator_map(self):
-    constructor, args = self._factor_indicator_map
-    return constructor(args)
+    args = self._factor_indicator_map
+    return torch.sparse.LongTensor(*args).cuda()
 
   #####
 
