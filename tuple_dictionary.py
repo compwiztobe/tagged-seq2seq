@@ -155,27 +155,27 @@ class TupleDictionary(Dictionary):
   def string(
     self,
     tensor,
-    bpe_symbols=None,
-    escape_unks=False,
+    bpe_symbol=None,
+    escape_unk=False,
     extra_symbols_to_ignore=None,
-    unk_strings=None,
+    unk_string=None,
     factored_indices=False,
     as_tuple=False
   ):
     if torch.is_tensor(tensor) and tensor.dim() == 2 + factored_indices:
       return "\n".join(
-        self.string(t, bpe_symbols, escape_unks, extra_symbols_to_ignore, unk_strings, factored_indices, as_tuple)
+        self.string(t, bpe_symbol, escape_unk, extra_symbols_to_ignore, unk_string, factored_indices, as_tuple)
         for t in tensor
       )
 
-    if bpe_symbols is None:
-      bpe_symbols = [None for _ in self.dicts]
-    if escape_unks is False:
-      escape_unks = [False for _ in self.dicts]
+    if bpe_symbol is None:
+      bpe_symbol = [None for _ in self.dicts]
+    if escape_unk is False:
+      escape_unk = [False for _ in self.dicts]
     if extra_symbols_to_ignore is None:
       extra_symbols_to_ignore = [None for _ in self.dicts]
-    if unk_strings is None:
-      unk_strings = [None for _ in self.dicts]
+    if unk_string is None:
+      unk_string = [None for _ in self.dicts]
 
     if not factored_indices:
       tensor = self.factor_indices(tensor)
@@ -187,7 +187,7 @@ class TupleDictionary(Dictionary):
         for index in indices
       ]
       for d, indices, bpe_symbol, escape_unk, extra_symbols, unk_string
-      in zip(self.dicts, zip(*tensor), bpe_symbols, escape_unks, extra_symbols_to_ignore, unk_strings)
+      in zip(self.dicts, zip(*tensor), bpe_symbol, escape_unk, extra_symbols_to_ignore, unk_string)
     ]
     if as_tuple:
       return " ".join(str(t) for t in zip(*strings))
