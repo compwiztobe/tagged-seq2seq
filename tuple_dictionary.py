@@ -155,13 +155,16 @@ class TupleDictionary(Dictionary):
   def string(
     self,
     tensor,
+    bpe_symbol=None,
+    escape_unk=False,
+    extra_symbols_to_ignore=None,
+    unk_string=None,
     factored_indices=False,
-    as_tuple=False,
-    **kwargs
+    as_tuple=False
   ):
     if torch.is_tensor(tensor) and tensor.dim() == 2 + factored_indices:
       return "\n".join(
-        self.string(t, factored_indices, as_tuple, **kwargs)
+        self.string(t, bpe_symbol, escape_unk, extra_symbols_to_ignore, unk_string, factored_indices, as_tuple)
         for t in tensor
       )
 
@@ -169,7 +172,7 @@ class TupleDictionary(Dictionary):
       tensor = self.factor_indices(tensor)
     strings = [
       [
-        d.string([index], **kwargs)
+        d.string([index], bpe_symbol, escape_unk, extra_symbols_to_ignore, unk_string)
         for index in indices
       ]
       for d, indices in zip(self.dicts, zip(*tensor))
