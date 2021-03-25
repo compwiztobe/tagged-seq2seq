@@ -37,7 +37,7 @@ def main(args):
   sentence_count = 0
   NE_count = 0
 
-  sentences = (Sentence(line.strip()) for line in sys.stdin if line.strip() != "" and not line.startswith("#"))
+  sentences = (Sentence(line.strip()) for line in sys.stdin)
 
   for tagged_sentence in tag_sentences(tagger, sentences, progress=args.progress):
     if args.print_tags:
