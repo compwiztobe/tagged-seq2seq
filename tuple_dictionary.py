@@ -21,14 +21,14 @@ class TupleDictionary(Dictionary):
       dicts = [Dictionary() for _ in range(factors)]
     self.dicts = dicts
     self.counts = Counter()
-    self.bos_word, self.unk_word, self.pad_word, self.eos_word = [
+    self.bos_word, self.pad_word, self.eos_word, self.unk_word = [
       sep.join(getattr(d, attr) for d in dicts)
-      for attr in ['bos_word', 'unk_word', 'pad_word', 'eos_word']
+      for attr in ['bos_word', 'pad_word', 'eos_word', 'unk_word']
     ]
     # this doesn't work with the underlying symbol sets and index factorizations changing
     # self.bos_index, self.unk_index, self.pad_index, self.eos_index = [
     #   self.compute_index(getattr(d, attr) for d in dicts)
-    #   for attr in ['bos_index', 'unk_index', 'pad_index', 'eos_index']
+    #   for attr in ['bos_index', 'pad_index', 'eos_index', 'unk_index']
     # ]
     # this also doesn't work, it's not an instance member, only a parameter to the constructor
     # self.extra_special_symbols = product(d.extra_special_symbols for d in dicts)
@@ -269,7 +269,7 @@ class TupleDictionary(Dictionary):
       header = f.readline().strip()
       assert header.startswith("# sep ")
       sep = header.split()[-1] # header.remove_prefix("# sep ")
-      assert len(factors) > 1
+      assert len(factors) > 0
       lines = f.readlines()
       assert len(lines) == sum(factors)
       factor_dicts = [
