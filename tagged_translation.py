@@ -1,8 +1,9 @@
 import os
 import logging
+import numpy as np
 
-from fairseq import tokenizer, utils
-from fairseq.data import Dictionary
+from fairseq import metrics, tokenizer, utils
+from fairseq.data import Dictionary, data_utils
 from fairseq.file_io import PathManager
 from fairseq.tasks import register_task
 from fairseq.tasks.translation import TranslationTask
@@ -11,11 +12,51 @@ from .tuple_dictionary import TupleDictionary
 
 logger = logging.getLogger(__name__)
 
+EVAL_BLEU_ORDER = 4
+
 @register_task('tagged_translation')
 class TaggedTranslationTask(TranslationTask):
   @staticmethod
   def add_args(parser):
     TranslationTask.add_args(parser)
+
+  @classmethod
+  def setup_task(cls, args, **kwargs):
+    # import traceback, sys
+    # try:
+    #   super().setup_task(args, **kwargs)
+    # except AssertionError as e:
+    #   logger.warning("WARNING: inherited task setup failed an assertion:", e)
+    #   traceback.print_exception(*sys.exc_info())
+        args.left_pad_source = utils.eval_bool(args.left_pad_source)
+        args.left_pad_target = utils.eval_bool(args.left_pad_target)
+
+        paths = utils.split_paths(args.data)
+        assert len(paths) > 0
+        # find language pair automatically
+        if args.source_lang is None or args.target_lang is None:
+            args.source_lang, args.target_lang = data_utils.infer_language_pair(
+                paths[0]
+            )
+        if args.source_lang is None or args.target_lang is None:
+            raise Exception(
+                "Could not infer language pair, please provide it explicitly"
+            )
+
+        # load dictionaries
+        src_dict = cls.load_dictionary(
+            os.path.join(paths[0], "dict.{}.txt".format(args.source_lang))
+        )
+        tgt_dict = cls.load_dictionary(
+            os.path.join(paths[0], "dict.{}.txt".format(args.target_lang))
+        )
+        # assert src_dict.pad() == tgt_dict.pad()
+        # assert src_dict.eos() == tgt_dict.eos()
+        # assert src_dict.unk() == tgt_dict.unk()
+        logger.info("[{}] dictionary: {} types".format(args.source_lang, len(src_dict)))
+        logger.info("[{}] dictionary: {} types".format(args.target_lang, len(tgt_dict)))
+
+        return cls(args, src_dict, tgt_dict)
 
   @classmethod
   def load_dictionary(cls, filename):
@@ -59,20 +100,65 @@ class TaggedTranslationTask(TranslationTask):
     d.finalize(threshold=threshold, nwords=nwords, padding_factor=padding_factor)
     return d
 
-  def valid_step(self, sample, model, criterion):
-    loss, sample_size, logging_output = super().valid_step(sample, model, criterion)
-    # if self.args.eval_F1:
-    #   F1 = self.compute_F1(...) # this has a problem, already the hypothesis is generated
-    #                             # in super().valid_step() -> _inference_with_bleu
-    #                             # no need redoing that...
-    #   logging_output['???'] = ???
-    return loss, sample_size, logging_output
+  # def valid_step(self, sample, model, criterion):
+  #   loss, sample_size, logging_output = super().valid_step(sample, model, criterion)
+  #   # if self.args.eval_F1:
+  #   #   F1 = self.compute_F1(...) # this has a problem, already the hypothesis is generated
+  #   #                             # in super().valid_step() -> _inference_with_bleu
+  #   #                             # no need redoing that...
+  #   #   logging_output['???'] = ???
+  #   return loss, sample_size, logging_output
+
+  # def reduce_metrics(self, logging_outputs, criterion):
+  #   super().reduce_metrics(logging_outputs, criterion)
+  #   # if self.args.eval_F1:
+  #   #   # add up F1 metrics
+  #   #   pass
 
   def reduce_metrics(self, logging_outputs, criterion):
-    super().reduce_metrics(logging_outputs, criterion)
-    # if self.args.eval_F1:
-    #   # add up F1 metrics
-    #   pass
+      super(TranslationTask, self).reduce_metrics(logging_outputs, criterion)
+      if self.args.eval_bleu:
+
+          def sum_logs(key):
+              import torch
+              result = sum(log.get(key, 0) for log in logging_outputs)
+              if torch.is_tensor(result):
+                result = result.cpu()
+              return result
+
+          counts, totals = [], []
+          for i in range(EVAL_BLEU_ORDER):
+              counts.append(sum_logs("_bleu_counts_" + str(i)))
+              totals.append(sum_logs("_bleu_totals_" + str(i)))
+
+          # print([[log.get("_bleu_totals_" + str(i),0) for log in logging_outputs] for i in range(EVAL_BLEU_ORDER)])
+
+          if max(totals) > 0:
+              # log counts as numpy arrays -- log_scalar will sum them correctly
+              metrics.log_scalar("_bleu_counts", np.array(counts))
+              metrics.log_scalar("_bleu_totals", np.array(totals))
+              metrics.log_scalar("_bleu_sys_len", sum_logs("_bleu_sys_len"))
+              metrics.log_scalar("_bleu_ref_len", sum_logs("_bleu_ref_len"))
+
+              def compute_bleu(meters):
+                  import inspect
+                  import sacrebleu
+
+                  fn_sig = inspect.getfullargspec(sacrebleu.compute_bleu)[0]
+                  if "smooth_method" in fn_sig:
+                      smooth = {"smooth_method": "exp"}
+                  else:
+                      smooth = {"smooth": "exp"}
+                  bleu = sacrebleu.compute_bleu(
+                      correct=meters["_bleu_counts"].sum,
+                      total=meters["_bleu_totals"].sum,
+                      sys_len=meters["_bleu_sys_len"].sum,
+                      ref_len=meters["_bleu_ref_len"].sum,
+                      **smooth
+                  )
+                  return round(bleu.score, 2)
+
+              metrics.log_derived("bleu", compute_bleu)
 
   def _inference_with_bleu(self, generator, sample, model):
     import sacrebleu

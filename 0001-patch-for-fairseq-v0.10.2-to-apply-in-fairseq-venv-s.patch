@@ -1,0 +1,66 @@
+From ec2089cbdba7aaf038d50c47f54b197df90fa9d3 Mon Sep 17 00:00:00 2001
+From: Aren Siekmeier <aren.siekmeier@gmail.com>
+Date: Thu, 8 Apr 2021 16:00:46 +0900
+Subject: [PATCH] patch for fairseq v0.10.2 to apply in fairseq venv
+ site-packages - this version produced 2021-04-08 seminar results
+
+apply patch in venv/lib/python/site-packages directory with
+$ patch -p1 < patchfile
+---
+ fairseq/data/dictionary.py            | 2 ++
+ fairseq/data/language_pair_dataset.py | 8 ++++----
+ fairseq/tasks/translation.py          | 6 +++++-
+ 3 files changed, 11 insertions(+), 5 deletions(-)
+
+diff --git a/fairseq/data/dictionary.py b/fairseq/data/dictionary.py
+index e2df08e..d3f6b43 100644
+--- a/fairseq/data/dictionary.py
++++ b/fairseq/data/dictionary.py
+@@ -236,6 +236,8 @@ class Dictionary(object):
+         indices_start_line = self._load_meta(lines)
+ 
+         for line in lines[indices_start_line:]:
++            if line.startswith("#"):
++                continue
+             try:
+                 line, field = line.rstrip().rsplit(" ", 1)
+                 if field == "#fairseq:overwrite":
+diff --git a/fairseq/data/language_pair_dataset.py b/fairseq/data/language_pair_dataset.py
+index 62e7109..7e3d3e7 100644
+--- a/fairseq/data/language_pair_dataset.py
++++ b/fairseq/data/language_pair_dataset.py
+@@ -227,10 +227,10 @@ class LanguagePairDataset(FairseqDataset):
+         tgt_lang_id=None,
+         pad_to_multiple=1,
+     ):
+-        if tgt_dict is not None:
+-            assert src_dict.pad() == tgt_dict.pad()
+-            assert src_dict.eos() == tgt_dict.eos()
+-            assert src_dict.unk() == tgt_dict.unk()
++        # if tgt_dict is not None:
++        #     assert src_dict.pad() == tgt_dict.pad()
++        #     assert src_dict.eos() == tgt_dict.eos()
++        #     assert src_dict.unk() == tgt_dict.unk()
+         if tgt is not None:
+             assert len(src) == len(
+                 tgt
+diff --git a/fairseq/tasks/translation.py b/fairseq/tasks/translation.py
+index 79007a6..e0b0714 100644
+--- a/fairseq/tasks/translation.py
++++ b/fairseq/tasks/translation.py
+@@ -363,7 +363,11 @@ class TranslationTask(LegacyFairseqTask):
+         if self.args.eval_bleu:
+ 
+             def sum_logs(key):
+-                return sum(log.get(key, 0) for log in logging_outputs)
++              import torch
++              result = sum(log.get(key, 0) for log in logging_outputs)
++              if torch.is_tensor(result):
++                result = result.cpu()
++              return result
+ 
+             counts, totals = [], []
+             for i in range(EVAL_BLEU_ORDER):
+-- 
+2.7.4
+
