@@ -9,46 +9,54 @@ import torch
 from fairseq.data import Dictionary
 from fairseq.file_io import PathManager
 
+class FactorDictionary(Dictionary):
+  """
+  just a normal fairseq.data.Dictionary but with bos, pad, and eos special symbols removed
+  these special symbols will be handled at the tuple level, not separately for each factor
+  """
+  def __init__(self, *, unk="<unk>", extra_special_symbols=None):
+    self.unk_word = unk
+    self.symbols = []
+    self.count = []
+    self.indices = {}
+    self.unk_index = self.add_symbol(unk)
+    self.bos_index = self.pad_index = self.eos_index = None
+    if extra_special_symbols:
+      for s in extra_special_symbols:
+        self.add_symbol(s)
+    self.nspecial = len(self.symbols)
+
+
 class TupleDictionary(Dictionary):
   """
   convert multiple dictionaries with their own indices
   into a single dictionary with factored indices
   """
-  def __init__(self, sep="<&&&>", factors=None, dicts=None):
+  def __init__(self, sep="<&&&>", factors=None, dicts=None, extra_special_symbols=None):
     assert factors is not None or dicts is not None
     self.sep = sep
     if dicts is None:
-      dicts = [Dictionary() for _ in range(factors)]
+      dicts = [FactorDictionary() for _ in range(factors)]
     self.dicts = dicts
     self.counts = Counter()
-    self.bos_word, self.pad_word, self.eos_word, self.unk_word = [
-      sep.join(getattr(d, attr) for d in dicts)
-      for attr in ['bos_word', 'pad_word', 'eos_word', 'unk_word']
+    self.special_symbols = []
+    self.special_indices = {}
+    self.bos_word, self.pad_word, self.eos_word = [
+      sep.join(special_word for d in dicts)
+      for special_word in ['<s>', '<pad>', '</s>']
     ]
-    # this doesn't work with the underlying symbol sets and index factorizations changing
-    # self.bos_index, self.unk_index, self.pad_index, self.eos_index = [
-    #   self.compute_index(getattr(d, attr) for d in dicts)
-    #   for attr in ['bos_index', 'pad_index', 'eos_index', 'unk_index']
-    # ]
-    # this also doesn't work, it's not an instance member, only a parameter to the constructor
-    # self.extra_special_symbols = product(d.extra_special_symbols for d in dicts)
-    self.nspecial = prod(d.nspecial for d in dicts)
-
-  @property
-  def bos_index(self):
-    return self.compute_index(d.bos_index for d in self.dicts)
+    self.unk_word = sep.join(d.unk_word for d in dicts)
+    self.bos_index = self.add_symbol_special(self.bos_word)
+    self.pad_index = self.add_symbol_special(self.pad_word)
+    self.eos_index = self.add_symbol_special(self.eos_word)
+    if extra_special_symbols:
+      for s in extra_special_symbols:
+        self.add_symbol_special(s)
+    self.nspecial = 3 + len(extra_special_symbols or [])
 
   @property
   def unk_index(self):
     return self.compute_index(d.unk_index for d in self.dicts)
-
-  @property
-  def pad_index(self):
-    return self.compute_index(d.pad_index for d in self.dicts)
-
-  @property
-  def eos_index(self):
-    return self.compute_index(d.eos_index for d in self.dicts)
 
   # I think I've specifically implemented all instances where this might have been called
   # so this is in fact unneeded?
@@ -81,11 +89,11 @@ class TupleDictionary(Dictionary):
 
   @property
   def symbols(self):
-    return list(product(*[d.symbols for d in self.dicts]))
+    return self.special_symbols + list(product(*[d.symbols for d in self.dicts]))
 
   @property
   def count(self):
-    return [self.counts[sym] for sym in symbols]
+    return [self.counts[sym] for sym in self.symbols]
 
   @property
   def indices(self):
@@ -101,17 +109,23 @@ class TupleDictionary(Dictionary):
     return tuple(len(d) for d in self.dicts)
 
   def factor_index(self, index):
+    if index < self.nspecial:
+      return tuple(index, *[-1] * (len(self.factors) - 1))
     return tuple(
-      index%prod(self.factors[i:])//prod(self.factors[i+1:])
+      (index - self.nspecial) % prod(self.factors[i:]) // prod(self.factors[i+1:])
       for i in range(len(self.factors))
     )
 
   # vectorized tensor version
   def factor_indices(self, indices, for_embedding=False):
-    factored_indices = [
-      (indices % prod(self.factors[i:])//prod(self.factors[i+1:])).T
-      for i in range(len(self.factors))
-    ]
+    def conditional_factor(t, i):
+      special_indices = t < self.nspecial
+      factored_indices = (t - self.nspecial) % prod(self.factors[i:]) // prod(self.factors[i+1:])
+      factored_indices[special_indices] = t[special_indices] if i == 0 else -1
+      return factored_indices.T
+
+    factored_indices = [conditional_factor(indices, i) for i in range(len(self.factors))]
+
     if for_embedding:
       return torch.stack([
         indices + sum(self.factors[:i]) for i, indices in enumerate(factored_indices)
@@ -120,7 +134,7 @@ class TupleDictionary(Dictionary):
       return torch.stack(factored_indices).T
 
   def compute_index(self, indices):
-    return sum(
+    return self.nspecial + sum(
       prod(self.factors[i+1:])*index
       for i, index in enumerate(indices)
     )
@@ -129,12 +143,12 @@ class TupleDictionary(Dictionary):
   # to save some compute, instead of building it every time we want to embed a batch
   @cached_property
   def _factor_indicator_map(self):
-    coords = torch.LongTensor([
-      [row for row in range(prod(self.factors)) for _ in range(len(self.factors))],
-      [x + sum(self.factors[:i]) for idx in product(*[range(n) for n in self.factors]) for i, x in enumerate(idx)]
+    coords = torch.LongTensor([[x,x] for x in range(self.nspecial)] + [
+      [self.nspecial + row for row in range(prod(self.factors)) for _ in range(len(self.factors))],
+      [self.nspecial + x + sum(self.factors[:i]) for idx in product(*[range(n) for n in self.factors]) for i, x in enumerate(idx)]
     ])
-    values = torch.ones(prod(self.factors) * len(self.factors))
-    size = torch.Size((prod(self.factors), sum(self.factors)))
+    values = torch.ones(self.nspecial + prod(self.factors) * len(self.factors))
+    size = torch.Size((self.nspecial + prod(self.factors), self.nspecial + sum(self.factors)))
     return coords, values, size
 
   @property
@@ -150,7 +164,10 @@ class TupleDictionary(Dictionary):
     if not as_tuple:
       syms = tuple(syms.split(self.sep))
     assert isinstance(syms, tuple) and len(syms) == len(self.dicts)
-    return self.compute_index(d.index(sym) for d, sym in zip(self.dicts, syms))
+    if syms in self.special_symbols:
+      return self.special_symbols.index(syms)
+    else:
+      return self.compute_index(d.index(sym) for d, sym in zip(self.dicts, syms))
 
   def string(
     self,
@@ -195,6 +212,18 @@ class TupleDictionary(Dictionary):
     self.counts.update(Counter({word: n}))
     indices = tuple(d.add_symbol(w, n=n, overwrite=overwrite) for d, w in zip(self.dicts, word))
     return self.compute_index(indices)
+
+  def add_symbol_special(self, word, n=1, overwrite=False, as_tuple=False):
+    if not as_tuple:
+      word = tuple(word.split(self.sep))
+    self.counts.update(Counter({word: n}))
+    if word in self.indices and not overwrite:
+      return self.indices[word]
+    else:
+      idx = self.nspecial
+      self.special_indices[word] = idx
+      self.special_symbols.append(word)
+      return idx
 
   def update(self, new_dict):
     assert hasattr(new_dict, 'dicts') and hasattr(new_dict, 'counts')
@@ -284,7 +313,7 @@ class TupleDictionary(Dictionary):
         "followed by that many lines for each factor dictionary."
       )
 
-    dicts = [Dictionary.load(factor_dict) for factor_dict in factor_dicts]
+    dicts = [FactorDictionary.load(factor_dict) for factor_dict in factor_dicts]
     return cls(sep, dicts=dicts)
 
   def save(self, f):
@@ -308,7 +337,9 @@ class TupleDictionary(Dictionary):
 
   def dummy_sentence(self, length):
     ts = [d.dummy_sentence(length) for d in self.dicts]
-    return torch.Tensor([self.compute_index(t) for t in zip(*ts)])
+    t = torch.Tensor([self.compute_index(t) for t in zip(*ts)])
+    t[-1] = self.eos()
+    return t
 
   # inherited implementation works fine, with add_symbol and index implemented correctly
   # def encode_line(self):
