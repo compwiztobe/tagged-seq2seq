@@ -46,13 +46,14 @@ class TupleDictionary(Dictionary):
       for special_word in ['<s>', '<pad>', '</s>']
     ]
     self.unk_word = sep.join(d.unk_word for d in dicts)
+    self.nspecial = 0
     self.bos_index = self.add_symbol_special(self.bos_word)
     self.pad_index = self.add_symbol_special(self.pad_word)
     self.eos_index = self.add_symbol_special(self.eos_word)
     if extra_special_symbols:
       for s in extra_special_symbols:
         self.add_symbol_special(s)
-    self.nspecial = 3 + len(extra_special_symbols or [])
+    # self.nspecial = 3 + len(extra_special_symbols or [])
 
   @property
   def unk_index(self):
@@ -97,10 +98,7 @@ class TupleDictionary(Dictionary):
 
   @property
   def indices(self):
-    return {
-      symbols: self.compute_index(d.indices[symbol] for d, symbol in zip(self.dicts, symbols))
-      for symbols in self.symbols
-    }
+    return {symbol: self.index(symbol, as_tuple=True) for symbol in self.symbols}
 
   #####
 
@@ -207,11 +205,15 @@ class TupleDictionary(Dictionary):
       return self.sep.join(unk)
 
   def add_symbol(self, word, n=1, overwrite=False, as_tuple=False):
+    # print("adding symbol %s" % word)
     if not as_tuple:
       word = tuple(word.split(self.sep))
     self.counts.update(Counter({word: n}))
-    indices = tuple(d.add_symbol(w, n=n, overwrite=overwrite) for d, w in zip(self.dicts, word))
-    return self.compute_index(indices)
+    if word in self.special_symbols and not overwrite:
+      return self.indices[word]
+    else:
+      indices = tuple(d.add_symbol(w, n=n, overwrite=overwrite) for d, w in zip(self.dicts, word))
+      return self.compute_index(indices)
 
   def add_symbol_special(self, word, n=1, overwrite=False, as_tuple=False):
     if not as_tuple:
@@ -223,6 +225,7 @@ class TupleDictionary(Dictionary):
       idx = self.nspecial
       self.special_indices[word] = idx
       self.special_symbols.append(word)
+      self.nspecial += 1
       return idx
 
   def update(self, new_dict):

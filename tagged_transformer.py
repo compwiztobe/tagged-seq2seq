@@ -203,7 +203,7 @@ class SumEmbedding(nn.Embedding):
     input_factors = self.dictionary.factor_indices(input, for_embedding=True)
     special_indices = input_factors < 0
     embeddings = super().forward(input_factors)
-    embeddings[*special_indices,1:,:] = 0
+    embeddings[special_indices,1:,:] = 0
     return embeddings.sum(axis=-2) # last axis is embedding vectors, factors along second to last
     # or use an EmbeddingBag, but that doesn't support arbitrary dimension
 
