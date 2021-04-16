@@ -15,15 +15,16 @@ class FactorDictionary(Dictionary):
   these special symbols will be handled at the tuple level, not separately for each factor
   """
   def __init__(self, *, unk="<unk>", extra_special_symbols=None):
-    self.unk_word = unk
-    self.symbols = []
-    self.count = []
-    self.indices = {}
-    self.unk_index = self.add_symbol(unk)
+    super().__init__(unk=unk, extra_special_symbols=extra_special_symbols)
+    self.symbols, self.count = zip(*[
+      [s,c] for s,c in zip(self.symbols,self.count)
+      if s not in [self.bos_word, self.pad_word, self.eos_word]
+    ])
+    self.symbols = list(self.symbols)
+    self.count = list(self.count)
+    self.indices = {s: i for i, s in enumerate(self.symbols)}
+    del self.bos_word, self.pad_word, self.eos_word
     self.bos_index = self.pad_index = self.eos_index = None
-    if extra_special_symbols:
-      for s in extra_special_symbols:
-        self.add_symbol(s)
     self.nspecial = len(self.symbols)
 
 
@@ -38,22 +39,17 @@ class TupleDictionary(Dictionary):
     if dicts is None:
       dicts = [FactorDictionary() for _ in range(factors)]
     self.dicts = dicts
-    self.counts = Counter()
-    self.special_symbols = []
-    self.special_indices = {}
-    self.bos_word, self.pad_word, self.eos_word = [
-      sep.join(special_word for d in dicts)
-      for special_word in ['<s>', '<pad>', '</s>']
-    ]
-    self.unk_word = sep.join(d.unk_word for d in dicts)
-    self.nspecial = 0
-    self.bos_index = self.add_symbol_special(self.bos_word)
-    self.pad_index = self.add_symbol_special(self.pad_word)
-    self.eos_index = self.add_symbol_special(self.eos_word)
+    self.special_symbols = [(w,)*len(dicts) for w in ["<s>", "<pad>", "</s>"]]
     if extra_special_symbols:
-      for s in extra_special_symbols:
-        self.add_symbol_special(s)
-    # self.nspecial = 3 + len(extra_special_symbols or [])
+      self.special_symbols += [(w,)*len(dicts) for w in set(extra_special_symbols)]
+    self.bos_word, self.pad_word, self.eos_word = [sep.join(w) for w in self.special_symbols[:3]]
+    self.counts = Counter(self.special_symbols)
+    self.nspecial = len(self.special_symbols)
+    self.bos_index = self.index(self.bos_word)
+    self.pad_index = self.index(self.pad_word)
+    self.eos_index = self.index(self.eos_word)
+    self.unk_word = sep.join(d.unk_word for d in dicts)
+    self.add_symbol(self.unk_word)
 
   @property
   def unk_index(self):
@@ -205,28 +201,14 @@ class TupleDictionary(Dictionary):
       return self.sep.join(unk)
 
   def add_symbol(self, word, n=1, overwrite=False, as_tuple=False):
-    # print("adding symbol %s" % word)
     if not as_tuple:
       word = tuple(word.split(self.sep))
     self.counts.update(Counter({word: n}))
     if word in self.special_symbols and not overwrite:
-      return self.indices[word]
+      return self.index(word, as_tuple=True)
     else:
       indices = tuple(d.add_symbol(w, n=n, overwrite=overwrite) for d, w in zip(self.dicts, word))
       return self.compute_index(indices)
-
-  def add_symbol_special(self, word, n=1, overwrite=False, as_tuple=False):
-    if not as_tuple:
-      word = tuple(word.split(self.sep))
-    self.counts.update(Counter({word: n}))
-    if word in self.indices and not overwrite:
-      return self.indices[word]
-    else:
-      idx = self.nspecial
-      self.special_indices[word] = idx
-      self.special_symbols.append(word)
-      self.nspecial += 1
-      return idx
 
   def update(self, new_dict):
     assert hasattr(new_dict, 'dicts') and hasattr(new_dict, 'counts')

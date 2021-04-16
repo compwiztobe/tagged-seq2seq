@@ -50,8 +50,8 @@ class TaggedTranslationTask(TranslationTask):
         tgt_dict = cls.load_dictionary(
             os.path.join(paths[0], "dict.{}.txt".format(args.target_lang))
         )
-        # assert src_dict.pad() == tgt_dict.pad()
-        # assert src_dict.eos() == tgt_dict.eos()
+        assert src_dict.pad() == tgt_dict.pad()
+        assert src_dict.eos() == tgt_dict.eos()
         # assert src_dict.unk() == tgt_dict.unk()
         logger.info("[{}] dictionary: {} types".format(args.source_lang, len(src_dict)))
         logger.info("[{}] dictionary: {} types".format(args.target_lang, len(tgt_dict)))
@@ -69,7 +69,7 @@ class TaggedTranslationTask(TranslationTask):
 
   @classmethod
   def build_dictionary(
-    cls, filenames, workers=1, threshold=-1, nwords=-1, padding_factor=8
+    cls, filenames, workers=1, threshold=-1, nwords=-1, padding_factor=1
   ):
     """Build the dictionary
 
