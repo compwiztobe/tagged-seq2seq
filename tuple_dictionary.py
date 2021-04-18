@@ -75,7 +75,7 @@ class TupleDictionary(Dictionary):
       return self.sep.join(symbols)
 
   def __len__(self):
-    return prod(self.factors)
+    return self.nspecial + prod(self.factors)
 
   def __contains__(self, syms, as_tuple=False):
     if not as_tuple:
@@ -112,8 +112,9 @@ class TupleDictionary(Dictionary):
 
   # vectorized tensor version
   def factor_indices(self, indices, for_embedding=False):
+    special_indices = indices < self.nspecial
+
     def conditional_factor(t, i):
-      special_indices = t < self.nspecial
       factored_indices = (t - self.nspecial) % prod(self.factors[i:]) // prod(self.factors[i+1:])
       factored_indices[special_indices] = t[special_indices] if i == 0 else -1
       return factored_indices.T
@@ -122,7 +123,8 @@ class TupleDictionary(Dictionary):
 
     if for_embedding:
       return torch.stack([
-        indices + sum(self.factors[:i]) for i, indices in enumerate(factored_indices)
+        indices + torch.where(special_indices.T, 0, self.nspecial + sum(self.factors[:i]))
+        for i, indices in enumerate(factored_indices)
       ]).T
     else:
       return torch.stack(factored_indices).T
@@ -137,9 +139,9 @@ class TupleDictionary(Dictionary):
   # to save some compute, instead of building it every time we want to embed a batch
   @cached_property
   def _factor_indicator_map(self):
-    coords = torch.LongTensor([[x,x] for x in range(self.nspecial)] + [
-      [self.nspecial + row for row in range(prod(self.factors)) for _ in range(len(self.factors))],
-      [self.nspecial + x + sum(self.factors[:i]) for idx in product(*[range(n) for n in self.factors]) for i, x in enumerate(idx)]
+    coords = torch.LongTensor([
+      list(range(self.nspecial)) + [self.nspecial + row for row in range(prod(self.factors)) for _ in range(len(self.factors))],
+      list(range(self.nspecial)) + [self.nspecial + x + sum(self.factors[:i]) for idx in product(*[range(n) for n in self.factors]) for i, x in enumerate(idx)]
     ])
     values = torch.ones(self.nspecial + prod(self.factors) * len(self.factors))
     size = torch.Size((self.nspecial + prod(self.factors), self.nspecial + sum(self.factors)))

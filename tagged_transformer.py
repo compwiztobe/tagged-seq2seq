@@ -41,8 +41,8 @@ class TaggedTransformerModel(TransformerModel):
 
   @classmethod
   def build_embedding(cls, args, dictionary, embed_dim, path=None):
-    num_embeddings = sum(dictionary.factors) # ??? requires impl
-    padding_idx = dictionary.pad() # concat(dictionary.pad()) # ???
+    num_embeddings = dictionary.nspecial + sum(dictionary.factors)
+    padding_idx = dictionary.pad()
 
     emb = sumEmbedding(dictionary, num_embeddings, embed_dim, padding_idx)
     # if provided, load from preloaded dictionaries
@@ -202,8 +202,9 @@ class SumEmbedding(nn.Embedding):
   def forward(self, input):
     input_factors = self.dictionary.factor_indices(input, for_embedding=True)
     special_indices = input_factors < 0
+    input_factors[special_indices] = 0
     embeddings = super().forward(input_factors)
-    embeddings[special_indices,1:,:] = 0
+    embeddings[special_indices,:] = 0
     return embeddings.sum(axis=-2) # last axis is embedding vectors, factors along second to last
     # or use an EmbeddingBag, but that doesn't support arbitrary dimension
 
