@@ -67,8 +67,11 @@ class TupleDictionary(Dictionary):
     return hasattr(other, 'dicts') and self.dicts == other.dicts
 
   def __getitem__(self, index, as_tuple=False):
-    indices = self.factor_index(index)
-    symbols = tuple(d.symbols[i] for d, i in zip(self.dicts, indices))
+    if index < self.nspecial:
+      symbols = self.special_symbols[index]
+    else:
+      indices = self.factor_index(index)
+      symbols = tuple(d.symbols[i] for d, i in zip(self.dicts, indices))
     if as_tuple:
       return symbols
     else:
@@ -80,7 +83,10 @@ class TupleDictionary(Dictionary):
   def __contains__(self, syms, as_tuple=False):
     if not as_tuple:
       syms = [sym.split(self.sep) for sym in syms]
-    return all(sym in d.symbols for sym, d in zip(syms, self.dicts))
+    if syms in self.special_symbols:
+      return True
+    else:
+      return all(sym in d.symbols for sym, d in zip(syms, self.dicts))
 
   #####
 
@@ -186,7 +192,7 @@ class TupleDictionary(Dictionary):
     strings = [
       [
         d.string([index], bpe_symbol, escape_unk, extra_symbols_to_ignore, unk_string)
-        for index in indices
+        for index in indices if index >= 0
       ]
       for d, indices in zip(self.dicts, zip(*tensor))
     ]
