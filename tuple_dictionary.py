@@ -25,6 +25,7 @@ class FactorDictionary(Dictionary):
     self.indices = {s: i for i, s in enumerate(self.symbols)}
     del self.bos_word, self.pad_word, self.eos_word
     self.bos_index = self.pad_index = self.eos_index = None
+    self.unk_index = self.symbols.index(self.unk_word)
     self.nspecial = len(self.symbols)
 
 
