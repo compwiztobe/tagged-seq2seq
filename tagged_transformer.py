@@ -1,3 +1,4 @@
+import torch
 import torch.nn as nn
 from typing import Any, Dict, Optional
 from fairseq.models import register_model, register_model_architecture
@@ -74,6 +75,14 @@ class TaggedTransformerDecoder(TransformerDecoder):
   """
   def __init__(self, args, dictionary, embed_tokens, no_encoder_attn=False):
     super().__init__(args, dictionary, embed_tokens, no_encoder_attn=no_encoder_attn)
+    self.output_projection_indices = nn.Parameter(
+      dictionary.factor_indices(torch.arange(len(dictionary)), for_embedding=True),
+      requires_grad=False
+    )
+    # if args.fp16:
+    #   self.output_projection_indices = self.output_projection_indices.half()
+    # if next(self.parameters()).is_cuda:
+    #   self.output_projection_indices = self.output_projection_indices.cuda()
     if args.adaptive_softmax_cutoff is not None:
       self.adaptive_softmax = [self.adaptive_softmax] + [
         AdaptiveSoftmax(
@@ -150,40 +159,20 @@ class TaggedTransformerDecoder(TransformerDecoder):
 
   def output_layer(self, features):
     """Project features to the vocabulary size."""
-    """this requires a modification
-       the output projection gives a vector of dimension embedding_size
-       but embedding_size is the SUM of unique token and tag counts (vocab sizes)
-       we need a vector of dimension PRODUCT of vocab sizes (number of unique pairs)
-       and each element should be related to the probability of that pair
-       just as each element of the original projection is to the probability of that token or tag
-       so if later in beam decoding they compute P(tag) = exp(vector_tag)/sum_othertags exp(vector_othertag)
-       and similarly for tokens
-       we should get P(token, tag) = P(token)P(tag) = exp(prodvector_token,tag)/sum_otherpairs exp(prodvector_otherpair)
-       so that
-       prodvector_token,tag = vector_token + vector_tag
-       the same derivation holds for softmax instead of exp
-       remember this is scalar math (talking about individual elements, not vectors)
     """
+    this couldn't be much easier - factorization of the product space indices
+    are already computed in self.output_projection_indices - just need to
+    use these as the input to an embedding with the output vector elements
+    as weights - just gotta get the dimensions right
+    """
+    def output_embedding(indices):
+      # must flatten the index tensor and then reshape the output to restore dimensions
+      # basically lifted from torch.embedding C++ implementation (with some axis swaps)
+      return torch.index_select(features.T, 0, indices.reshape(-1)).T.reshape(features.size()[:-1] + indices.size())
+
     if self.adaptive_softmax is None:
-      # project back to size of sum vocab, then add elements to get to size of product vocab
-      # return torch.sparse.LongTensor(
-      #   torch.LongTensor(list(zip(
-      #     *[[i+j*t,j] for i in range(t) for j in range(tau)],
-      #     *[[i+j*t,i+tau] for i in range(t) for j in range(tau)]
-      #   ))),
-      #   torch.ones(2*t*tau),
-      #   torch.Size([t*tau,t+tau])
-      # ) * output_projection(features) # move sparse tensor definition into constructor
-      # return torch.tensordot(
-      #   self.output_projection(features),
-      #   self.dictionary.factor_indicator_map,
-      #   dims=([-1],[-1]) # last dim of projection and of indicator map is the factor term dimension (which token or tag)
-      # )
-      return batch_mm(
-        self.dictionary.factor_indicator_map, self.output_projection(features).transpose(-1,-2)
-      ).transpose(-1,-2)
-      # sparse matrix must be first matrix factor in matmul, and we need to transpose
-      # matrix axes of projection to match dimensions for matmul
+      return embeddings_special(self.output_projection_indices, output_embedding).sum(axis=-1)
+      # here the features are on the last dimension, with batch indices elsewhere
     else:
       return features
 
@@ -201,13 +190,18 @@ class SumEmbedding(nn.Embedding):
 
   def forward(self, input):
     input_factors = self.dictionary.factor_indices(input, for_embedding=True)
-    special_indices = input_factors < 0
-    input_factors[special_indices] = 0
-    embeddings = super().forward(input_factors)
-    embeddings[special_indices,:] = 0
-    return embeddings.sum(axis=-2) # last axis is embedding vectors, factors along second to last
+    return embeddings_special(input_factors, super().forward).sum(axis=-2)
+    # last axis is embedding vectors, factors along second to last
     # or use an EmbeddingBag, but that doesn't support arbitrary dimension
 
+def embeddings_special(input, embedding):
+  # some indices may be -1 indicating a special symbol
+  # for which we only sum over one vocab position
+  special_indices = input < 0
+  input[special_indices] = 0
+  embeddings = embedding(input)
+  embeddings[special_indices,:] = 0
+  return embeddings
 
 # https://github.com/pytorch/pytorch/issues/14489#issuecomment-607730242
 def batch_mm(matrix, matrix_batch):
