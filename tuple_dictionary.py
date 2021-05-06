@@ -28,34 +28,59 @@ class FactorDictionary(Dictionary):
     self.unk_index = self.symbols.index(self.unk_word)
     self.nspecial = len(self.symbols)
 
+class SpecialSymbolDictionary(Dictionary):
+  """
+  just a normal fairseq.data.Dictionary but with unk removed
+  to be handled at the factor level
+  """
+  def __init__(self, *, bos="<s>", pad="<pad>", eos="</s>", extra_special_symbols=None):
+    super().__init__(bos=bos, pad=pad, eos=eos, extra_special_symbols=extra_special_symbols)
+    self.symbols, self.count = zip(*[
+      [s,c] for s,c in zip(self.symbols,self.count)
+      if s != self.unk_word
+    ])
+    self.symbols = list(self.symbols)
+    self.count = list(self.count)
+    self.indices = {s: i for i, s in enumerate(self.symbols)}
+    del self.unk_word
+    self.unk_index = None
+    # not really needed, but just in case
+    self.bos_index = self.symbols.index(self.bos_word)
+    self.pad_index = self.symbols.index(self.pad_word)
+    self.eos_index = self.symbols.index(self.eos_word)
+    self.nspecial = len(self.symbols)
 
 class TupleDictionary(Dictionary):
   """
   convert multiple dictionaries with their own indices
   into a single dictionary with factored indices
   """
-  def __init__(self, sep="<&&&>", factors=None, dicts=None, extra_special_symbols=None):
+  def __init__(self, sep="<&&&>", factors=None, dicts=None, special_dict=None, extra_special_symbols=None):
     assert factors is not None or dicts is not None
     self.sep = sep
     if dicts is None:
       dicts = [FactorDictionary() for _ in range(factors)]
     self.dicts = dicts
-    bos_word, pad_word, eos_word = ["<s>", "<pad>", "</s>"]
-    self.special_symbols = []
-    self.nspecial = 0
+    self.special_dict = special_dict or SpecialSymbolDictionary(extra_special_symbols=extra_special_symbols)
     self.counts = Counter()
-    self.bos_word, self.pad_word, self.eos_word = [sep.join((w,)*len(dicts)) for w in [bos_word, pad_word, eos_word]]
-    self.unk_word = sep.join(d.unk_word for d in dicts)
-    self.bos_index = self.add_special_symbol(self.bos_word, as_tuple=True)
-    self.pad_index = self.add_special_symbol(self.pad_word, as_tuple=True)
-    self.eos_index = self.add_special_symbol(self.eos_word, as_tuple=True)
-    if extra_special_symbols:
-      for s in extra_special_symbols:
-        self.add_special_symbol(s, as_tuple=False)
+    special_symbols = [
+      (w,)*len(dicts)
+      for w in [self.special_dict.bos_word, self.special_dict.pad_word, self.special_dict.eos_word]
+    ] + [tuple(d.unk_word for d in dicts)]
+    self.bos_word, self.pad_word, self.eos_word, self.unk_word = [
+      sep.join(w for w in special_symbol) for special_symbol in special_symbols
+    ]
+    self.bos_index = self.special_dict.bos_index
+    self.pad_index = self.special_dict.pad_index
+    self.eos_index = self.special_dict.eos_index
 
   @property
   def unk_index(self):
     return self.compute_index(d.unk_index for d in self.dicts)
+
+  @property
+  def nspecial(self):
+    return len(self.special_dict)
 
   # I think I've specifically implemented all instances where this might have been called
   # so this is in fact unneeded?
@@ -66,11 +91,12 @@ class TupleDictionary(Dictionary):
   #     raise AttributeError("'%s' object has no attribute '%s'", (type(self), attr))
 
   def __eq__(self, other):
-    return hasattr(other, 'dicts') and self.dicts == other.dicts
+    return hasattr(other, 'dicts') and self.dicts == other.dicts \
+      and hasattr(other, 'special_dict') and self.special_dict == other.special_dict
 
   def __getitem__(self, index, as_tuple=False):
     if index < self.nspecial:
-      symbols = self.special_symbols[index]
+      symbols = (self.special_dict[index],)*len(self.dicts)
     else:
       indices = self.factor_index(index)
       symbols = tuple(d.symbols[i] for d, i in zip(self.dicts, indices))
@@ -85,7 +111,7 @@ class TupleDictionary(Dictionary):
   def __contains__(self, syms, as_tuple=False):
     if not as_tuple:
       syms = [sym.split(self.sep) for sym in syms]
-    if syms in self.special_symbols:
+    if len(set(syms)) == 1 and syms[0] in self.special_dict.symbols:
       return True
     else:
       return all(sym in d.symbols for sym, d in zip(syms, self.dicts))
@@ -94,11 +120,12 @@ class TupleDictionary(Dictionary):
 
   @property
   def symbols(self):
-    return self.special_symbols + list(product(*[d.symbols for d in self.dicts]))
+    return [(s,)*len(self.dicts) for s in self.special_dict.symbols] \
+      + list(product(*[d.symbols for d in self.dicts]))
 
   @property
   def count(self):
-    return [self.counts[sym] for sym in self.symbols]
+    return self.special_dict.count + [self.counts[sym] for sym in self.symbols[self.nspecial:]]
 
   @property
   def indices(self):
@@ -138,10 +165,14 @@ class TupleDictionary(Dictionary):
       return torch.stack(factored_indices).T
 
   def compute_index(self, indices):
-    return self.nspecial + sum(
-      prod(self.factors[i+1:])*index
-      for i, index in enumerate(indices)
-    )
+    indices = tuple(indices) # allowing generator expression in function call
+    if indices[0] < self.nspecial and all(index == -1 for index in indices[1:]):
+      return indices[0] # just in case we get sent a special symbol index tuple
+    else:
+      return self.nspecial + sum(
+        prod(self.factors[i+1:])*index
+        for i, index in enumerate(indices)
+      )
 
   # this should probably be constructed once upon dictionary finalize or something
   # to save some compute, instead of building it every time we want to embed a batch
@@ -168,8 +199,8 @@ class TupleDictionary(Dictionary):
     if not as_tuple:
       syms = tuple(syms.split(self.sep))
     assert isinstance(syms, tuple) and len(syms) == len(self.dicts)
-    if syms in self.special_symbols:
-      return self.special_symbols.index(syms)
+    if len(set(syms)) == 1 and syms[0] in self.special_dict.symbols:
+      return self.special_dict.index(syms[0])
     else:
       return self.compute_index(d.index(sym) for d, sym in zip(self.dicts, syms))
 
@@ -195,6 +226,7 @@ class TupleDictionary(Dictionary):
       [
         d.string([index], bpe_symbol, escape_unk, extra_symbols_to_ignore, unk_string)
         for index in indices if index >= 0
+        # skipping non-unk special symbols for now, though this could cause some misalignment
       ]
       for d, indices in zip(self.dicts, zip(*tensor))
     ]
@@ -214,28 +246,15 @@ class TupleDictionary(Dictionary):
     if not as_tuple:
       word = tuple(word.split(self.sep))
     self.counts[word] += n
-    if word in self.special_symbols and not overwrite:
-      return self.index(word, as_tuple=True)
+    if len(set(word)) == 1 and word[0] in self.special_dict.symbols:
+      return self.special_dict.add_symbol(word[0], n=n, overwrite=overwrite)
     else:
       indices = tuple(d.add_symbol(w, n=n, overwrite=overwrite) for d, w in zip(self.dicts, word))
       return self.compute_index(indices)
 
-  def add_special_symbol(self, word, n=1, overwrite=False, as_tuple=False):
-    if not as_tuple:
-      word = (word,)*len(self.dicts)
-    self.counts[word] += n
-    if word in self.special_symbols and not overwrite:
-      return self.index(word, as_tuple=True)
-    else:
-      index = len(self.special_symbols)
-      self.special_symbols.append(word)
-      return index
-
+  # this is in fact never called anywhere in the fairseq codebase, so I won't worry about it
   def update(self, new_dict):
-    assert hasattr(new_dict, 'dicts') and hasattr(new_dict, 'counts')
-    self.counts.update(new_dict.counts)
-    for d1, d2 in zip(self.dicts, new_dict.dicts):
-      d1.update(d2)
+    raise NotImplementedError
 
   def finalize(self, threshold=-1, nwords=-1, padding_factor=8):
     # thresholding and nwords are best at applied only to the first factor
@@ -254,14 +273,9 @@ class TupleDictionary(Dictionary):
     self.pad_to_multiple_(padding_factor)
 
   def pad_to_multiple_(self, padding_factor):
-    # same implementation as for a normal Dictionary, except we are adding special symbols
-    if padding_factor > 1:
-      i = 0
-      while len(self) % padding_factor != 0:
-        symbol = "madeupword{:04d}".format(i)
-        self.add_special_symbol(symbol, n=0, as_tuple=False)
-        self.nspecial += 1
-        i += 1
+    padding = padding_factor - len(self) % padding_factor
+    special_dict_size = len(self.special_dict) + padding
+    self.special_dict.pad_to_multiple_(padding_factor=special_dict_size)
 
   # inherited implementations of these from Dictionary will do just fine
   # since I've implemented self.{bos,pad,eos,unk}_index in the constructor
@@ -299,14 +313,19 @@ class TupleDictionary(Dictionary):
     try:
       header = f.readline().strip()
       assert header.startswith("# factors ")
-      nspecial, *factors = [int(f) for f in header.split()[2:]] # header.remove_prefix("# factors ").split()
-      factors = tuple(factors)
+      nspecial = int(header.split()[-1])
+      factors = tuple(int(f) for f in header.split()[2:-1]) # header.remove_prefix("# factors ").split()
       header = f.readline().strip()
       assert header.startswith("# sep ")
       sep = header.split()[-1] # header.remove_prefix("# sep ")
       assert nspecial + len(factors) > 0
       lines = f.readlines()
-      special_symbols, lines = lines[:nspecial], lines[nspecial:]
+      if nspecial > 0:
+        lines, special_lines = lines[:-nspecial], lines[-nspecial:]
+        assert len(special_lines) == nspecial
+        special_symbols = io.StringIO(''.join(special_lines))
+      else:
+        special_symbols = io.StringIO()
       assert len(lines) == sum(factors)
       factor_dicts = [
         io.StringIO(''.join(lines[sum(factors[:i]):sum(factors[:i+1])]))
@@ -315,43 +334,14 @@ class TupleDictionary(Dictionary):
     except (AssertionError, ValueError):
       raise ValueError(
         "Incorrect dictionary format, expected"
-        "'# factor [special_symbol_count] [factors]' and "
+        "'# factor [factors] [special_symbol_count]' and "
         "'# sep [sep]',"
         "followed by that many lines for special symbols and each factor dictionary."
       )
 
+    special_dict = SpecialSymbolDictionary.load(special_symbols)
     dicts = [FactorDictionary.load(factor_dict) for factor_dict in factor_dicts]
-    d = cls(sep, dicts=dicts)
-
-    # lifting add_from_file logic from Dictionary to here for special symbols
-    for line in special_symbols:
-      try:
-        line, field = line.rstrip().rsplit(" ", 1)
-        if field == "#fairseq:overwrite":
-          overwrite = True
-          line, field = line.rstrip().rsplit(" ", 1)
-        else:
-          overwrite = False
-        count = int(field)
-        word = line
-        if (word,)*len(self.dicts) in self.special_symbols and not overwrite:
-          raise RuntimeError(
-            "Duplicate special word found when loading Dictionary: '{}'. "
-            "Duplicate words can overwrite earlier ones by adding the "
-            "#fairseq:overwrite flag at the end of the corresponding row "
-            "in the dictionary file. If using the Camembert model, please "
-            "download an updated copy of the model file.".format(word)
-          )
-        d.add_special_symbol(word, n=count, overwrite=overwrite, as_tuple=False)
-      except ValueError:
-        raise ValueError(
-          "Incorrect dictionary format, expected"
-          "'# factor [special_symbol_count] [factors]' and "
-          "'# sep [sep]',"
-          "followed by that many lines for special symbols and each factor dictionary."
-        )
-
-      return d
+    return cls(sep, dicts=dicts, special_dict=special_dict)
 
   def save(self, f):
     """Stores dictionary into a text file
@@ -363,15 +353,14 @@ class TupleDictionary(Dictionary):
       with PathManager.open(f, "w", encoding="utf-8") as fd:
         return self.save(fd)
 
+    all_dicts = self.dicts + [self.special_dict]
     # print a header that will throw an error if we try to load as a normal dict
-    header = "# factors " + str(self.nspecial - 3) + " " + " ".join(str(len(d) - d.nspecial) for d in self.dicts)
+    header = "# factors " + " ".join(str(len(d) - d.nspecial) for d in all_dicts)
     print(header, file=f)
     header = "# sep " + self.sep
     print(header, file=f)
 
-    for s in self.special_symbols[3:]:
-      print("{} 0".format(s), file=f)
-    for d in self.dicts:
+    for d in all_dicts:
       d.save(f)
 
   def dummy_sentence(self, length):
