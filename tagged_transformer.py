@@ -164,10 +164,17 @@ class TaggedTransformerDecoder(TransformerDecoder):
     if self.adaptive_softmax is None:
       # self.output_projection(features) is batch indices x sum space
       # need to push sum space through to first axis, so it's the embedding count
-      return add_embeddings_special(
+      # and also need to collect batch indices into a single axis to form the embedding dim
+      # (nn.functional.embedding backprop doesn't support multiple embedding dims)
+      sum_projection = self.output_projection(features).T
+      sum_vocab_size = sum_projection.shape[0]
+      pair_vocab_size = self.output_projection_indices.shape[0]
+      pair_projection = add_embeddings_special(
         self.output_projection_indices,
-        lambda x: nn.functional.embedding(x, self.output_projection(features).T)
-      ).T
+        lambda x: nn.functional.embedding(x,
+          sum_projection.reshape(sum_vocab_size, -1))
+      ).reshape(pair_vocab_size, -1).T
+      return pair_projection
       # first two axes remain batch indices, last axis is pair space projection values
     else:
       return features
