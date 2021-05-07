@@ -254,7 +254,7 @@ class TupleDictionary(Dictionary):
     self.pad_to_multiple_(padding_factor)
 
   def pad_to_multiple_(self, padding_factor):
-    padding = padding_factor - len(self) % padding_factor
+    padding = -len(self) % padding_factor
     special_dict_size = len(self.special_dict) + padding
     self.special_dict.pad_to_multiple_(padding_factor=special_dict_size)
 
