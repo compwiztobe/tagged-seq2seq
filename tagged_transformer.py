@@ -1,15 +1,13 @@
 import torch
 import torch.nn as nn
-from typing import Any, Dict, Optional
 from fairseq.models import register_model, register_model_architecture
 from fairseq.models.transformer import (
+  Embedding,
   TransformerModel,
   TransformerDecoder,
   base_architecture as transformer_base_architecture
 )
-from fairseq.models.fairseq_encoder import EncoderOut
 from fairseq.modules import AdaptiveSoftmax
-from torch import Tensor
 
 @register_model('tagged_transformer')
 class TaggedTransformerModel(TransformerModel):
@@ -45,7 +43,7 @@ class TaggedTransformerModel(TransformerModel):
     num_embeddings = dictionary.nspecial + sum(dictionary.factors)
     padding_idx = dictionary.pad()
 
-    emb = sumEmbedding(dictionary, num_embeddings, embed_dim, padding_idx)
+    emb = SumEmbedding(dictionary, num_embeddings, embed_dim, padding_idx)
     # if provided, load from preloaded dictionaries
     if path:
       embed_dict = utils.parse_embedding(path)
@@ -111,48 +109,6 @@ class TaggedTransformerDecoder(TransformerDecoder):
           output_projection.weight, mean=0, std=self.output_embed_dim ** -0.5
         )
 
-  def forward( # ??? maybe this requires no change, only output_layer
-    self,
-    prev_output_tokens,
-    encoder_out: Optional[EncoderOut] = None,
-    incremental_state: Optional[Dict[str, Dict[str, Optional[Tensor]]]] = None,
-    features_only: bool = False,
-    full_context_alignment: bool = False,
-    alignment_layer: Optional[int] = None,
-    alignment_heads: Optional[int] = None,
-    src_lengths: Optional[Any] = None,
-    return_all_hiddens: bool = False,
-  ):
-    """
-    Args:
-      prev_output_tokens (LongTensor): previous decoder outputs of shape
-        `(batch, tgt_len)`, for teacher forcing
-      encoder_out (optional): output from the encoder, used for
-        encoder-side attention
-      incremental_state (dict): dictionary used for storing state during
-        :ref:`Incremental decoding`
-      features_only (bool, optional): only return features without
-        applying output layer (default: False).
-      full_context_alignment (bool, optional): don't apply
-        auto-regressive mask to self-attention (default: False).
-
-    Returns:
-      tuple:
-        - the decoder's output of shape `(batch, tgt_len, vocab)`
-        - a dictionary with any model-specific outputs
-    """
-    x, extra = self.extract_features(
-      prev_output_tokens,
-      encoder_out=encoder_out,
-      incremental_state=incremental_state,
-      full_context_alignment=full_context_alignment,
-      alignment_layer=alignment_layer,
-      alignment_heads=alignment_heads,
-    )
-    if not features_only:
-      x = self.output_layer(x)
-    return x, extra
-
   def output_layer(self, features):
     """Project features to the vocabulary size."""
     """
@@ -180,16 +136,11 @@ class TaggedTransformerDecoder(TransformerDecoder):
       return features
 
 
-def sumEmbedding(dictionary, num_embeddings, embedding_dim, padding_idx):
-  m = SumEmbedding(dictionary, num_embeddings, embedding_dim, padding_idx=padding_idx)
-  nn.init.normal_(m.weight, mean=0, std=embedding_dim ** -0.5)
-  nn.init.constant_(m.weight[padding_idx], 0)
-  return m
-
 class SumEmbedding(nn.Embedding):
-  def __init__(self, dictionary, *args, **kwargs):
+  def __init__(self, dictionary, num_embeddings, embedding_dim, padding_idx):
+    super().__init__(num_embeddings, embedding_dim, padding_idx=padding_idx)
     self.dictionary = dictionary
-    super().__init__(*args, **kwargs)
+    self.weight = Embedding(num_embeddings, embedding_dim, padding_idx).weight
 
   def forward(self, input):
     input_factors = self.dictionary.factor_indices(input, for_embedding=True)

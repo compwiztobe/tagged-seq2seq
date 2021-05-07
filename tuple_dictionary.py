@@ -116,8 +116,6 @@ class TupleDictionary(Dictionary):
     else:
       return all(sym in d.symbols for sym, d in zip(syms, self.dicts))
 
-  #####
-
   @property
   def symbols(self):
     return [(s,)*len(self.dicts) for s in self.special_dict.symbols] \
