@@ -78,11 +78,7 @@ class TaggedTransformerDecoder(TransformerDecoder):
     self.output_projection_indices = nn.Parameter(
       dictionary.factor_indices(torch.arange(len(dictionary)), for_embedding=True),
       requires_grad=False
-    )
-    # if args.fp16:
-    #   self.output_projection_indices = self.output_projection_indices.half()
-    # if next(self.parameters()).is_cuda:
-    #   self.output_projection_indices = self.output_projection_indices.cuda()
+    ) # this paramater should not be optimized, it's a fixed mapping
     if args.adaptive_softmax_cutoff is not None:
       self.adaptive_softmax = [self.adaptive_softmax] + [
         AdaptiveSoftmax(
@@ -165,14 +161,14 @@ class TaggedTransformerDecoder(TransformerDecoder):
     use these as the input to an embedding with the output vector elements
     as weights - just gotta get the dimensions right
     """
-    def output_embedding(indices):
-      # must flatten the index tensor and then reshape the output to restore dimensions
-      # basically lifted from torch.embedding C++ implementation (with some axis swaps)
-      return torch.index_select(features.T, 0, indices.reshape(-1)).T.reshape(features.size()[:-1] + indices.size())
-
     if self.adaptive_softmax is None:
-      return embeddings_special(self.output_projection_indices, output_embedding).sum(axis=-1)
-      # here the features are on the last dimension, with batch indices elsewhere
+      # self.output_projection(features) is batch indices x sum space
+      # need to push sum space through to first axis, so it's the embedding count
+      return add_embeddings_special(
+        self.output_projection_indices,
+        lambda x: nn.functional.embedding(x, self.output_projection(features).T)
+      ).T
+      # first two axes remain batch indices, last axis is pair space projection values
     else:
       return features
 
@@ -190,32 +186,20 @@ class SumEmbedding(nn.Embedding):
 
   def forward(self, input):
     input_factors = self.dictionary.factor_indices(input, for_embedding=True)
-    return embeddings_special(input_factors, super().forward).sum(axis=-2)
-    # last axis is embedding vectors, factors along second to last
-    # or use an EmbeddingBag, but that doesn't support arbitrary dimension
+    return add_embeddings_special(input_factors, super().forward)
 
-def embeddings_special(input, embedding):
+
+def add_embeddings_special(indices, embedding):
+  # indices is any size, output is indices.shape[:-1] x embedding.shape[1:]
+  # summed along last axis of indices (the factor axis)
+  # indices should be between 0 and embedding.shape[0] - 1
   # some indices may be -1 indicating a special symbol
   # for which we only sum over one vocab position
-  special_indices = input < 0
-  input[special_indices] = 0
-  embeddings = embedding(input)
+  special_indices = indices < 0
+  indices[special_indices] = 0
+  embeddings = embedding(indices)
   embeddings[special_indices,:] = 0
-  return embeddings
-
-# https://github.com/pytorch/pytorch/issues/14489#issuecomment-607730242
-def batch_mm(matrix, matrix_batch):
-  """
-  :param matrix: Sparse or dense matrix, size (m, n).
-  :param matrix_batch: Batched dense matrices, size (b, n, k).
-  :return: The batched matrix-matrix product, size (m, n) x (b, n, k) = (b, m, k).
-  """
-  batch_size = matrix_batch.shape[0]
-  # Stack the vector batch into columns. (b, n, k) -> (n, b, k) -> (n, b*k)
-  vectors = matrix_batch.transpose(0, 1).reshape(matrix.shape[1], -1)
-  # A matrix-matrix product is a batched matrix-vector product of the columns.
-  # And then reverse the reshaping. (m, n) x (n, b*k) = (m, b*k) -> (m, b, k) -> (b, m, k)
-  return matrix.mm(vectors).reshape(matrix.shape[0], batch_size, -1).transpose(1, 0)
+  return embeddings.sum(axis=indices.dim() - 1)
 
 
 @register_model_architecture("tagged_transformer", "tagged_transformer")

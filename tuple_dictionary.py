@@ -174,23 +174,6 @@ class TupleDictionary(Dictionary):
         for i, index in enumerate(indices)
       )
 
-  # this should probably be constructed once upon dictionary finalize or something
-  # to save some compute, instead of building it every time we want to embed a batch
-  @cached_property
-  def _factor_indicator_map(self):
-    coords = torch.LongTensor([
-      list(range(self.nspecial)) + [self.nspecial + row for row in range(prod(self.factors)) for _ in range(len(self.factors))],
-      list(range(self.nspecial)) + [self.nspecial + x + sum(self.factors[:i]) for idx in product(*[range(n) for n in self.factors]) for i, x in enumerate(idx)]
-    ])
-    values = torch.ones(self.nspecial + prod(self.factors) * len(self.factors))
-    size = torch.Size((self.nspecial + prod(self.factors), self.nspecial + sum(self.factors)))
-    return coords, values, size
-
-  @property
-  def factor_indicator_map(self):
-    args = self._factor_indicator_map
-    return torch.sparse.LongTensor(*args).cuda()
-
   #####
 
   def index(self, syms, as_tuple=False):
