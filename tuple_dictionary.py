@@ -163,14 +163,10 @@ class TupleDictionary(Dictionary):
       return torch.stack(factored_indices).T
 
   def compute_index(self, indices):
-    indices = tuple(indices) # allowing generator expression in function call
-    if indices[0] < self.nspecial and all(index == -1 for index in indices[1:]):
-      return indices[0] # just in case we get sent a special symbol index tuple
-    else:
-      return self.nspecial + sum(
-        prod(self.factors[i+1:])*index
-        for i, index in enumerate(indices)
-      )
+    return self.nspecial + sum(
+      prod(self.factors[i+1:])*index
+      for i, index in enumerate(indices)
+    )
 
   #####
 
