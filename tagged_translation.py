@@ -173,7 +173,7 @@ class TaggedTranslationTask(TranslationTask):
           # alternative that is unlikely to appear in the real
           # reference, but doesn't get split into multiple tokens.
           unk_string=("UNKNOWNTOKENINREF" if escape_unk else "UNKNOWNTOKENINHYP"),
-          )
+      )
       if self.tokenizer:
         s = self.tokenizer.decode(s)
       return s
@@ -192,8 +192,8 @@ class TaggedTranslationTask(TranslationTask):
       logger.info("example hypothesis: " + hyps[0])
       logger.info("example reference: " + refs[0])
 
-    hyps = [' '.join(pair.split(self.tgt_dict.sep)[0] for pair in hyp.split()) for hyp in hyps]
-    refs = [' '.join(pair.split(self.tgt_dict.sep)[0] for pair in ref.split()) for ref in refs]
+    # hyps = [' '.join(pair.split(self.tgt_dict.sep)[0] for pair in hyp.split()) for hyp in hyps]
+    # refs = [' '.join(pair.split(self.tgt_dict.sep)[0] for pair in ref.split()) for ref in refs]
 
     if self.args.eval_tokenized_bleu:
       return sacrebleu.corpus_bleu(hyps, [refs], tokenize="none")

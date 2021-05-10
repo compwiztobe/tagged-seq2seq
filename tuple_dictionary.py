@@ -6,7 +6,7 @@ from functools import cached_property
 from collections import Counter
 
 import torch
-from fairseq.data import Dictionary
+from fairseq.data import Dictionary, data_utils
 from fairseq.file_io import PathManager
 
 class FactorDictionary(Dictionary):
@@ -76,6 +76,10 @@ class TupleDictionary(Dictionary):
 
   @property
   def unk_index(self):
+    # # hack to recognize unks on the first factor - not appropriate for preprocessing!
+    # class FirstFactorInt(int):
+    #   def __eq__(a, b):
+    #     return self.factor_index(a)[0] == self.factor_index(b)[0]
     return self.compute_index(d.unk_index for d in self.dicts)
 
   @property
@@ -188,29 +192,33 @@ class TupleDictionary(Dictionary):
     escape_unk=False,
     extra_symbols_to_ignore=None,
     unk_string=None,
-    factored_indices=False,
-    as_tuple=False
+    first_factor_only=True
   ):
-    if torch.is_tensor(tensor) and tensor.dim() == 2 + factored_indices:
-      return "\n".join(
-        self.string(t, bpe_symbol, escape_unk, extra_symbols_to_ignore, unk_string, factored_indices, as_tuple)
-        for t in tensor
-      )
-
-    if not factored_indices:
-      tensor = self.factor_indices(tensor)
-    strings = [
-      [
-        d.string([index], bpe_symbol, escape_unk, extra_symbols_to_ignore, unk_string)
-        for index in indices if index >= 0
-        # skipping non-unk special symbols for now, though this could cause some misalignment
+    # using inherited logic on pair indices, giving sep-joined strings
+    # but must keep the subword symbols so we can process them later
+    sents = super().string(tensor,
+      bpe_symbol=None,
+      escape_unk=escape_unk,
+      extra_symbols_to_ignore=extra_symbols_to_ignore,
+      unk_string=self.sep.join((unk_string,)*len(self.dicts))
+    )
+    # hack to insert unk_string correctly on individual factors
+    # this will be VERY buggy...
+    if unk_string:
+      for d in self.dicts:
+        sents = sents.replace(d.unk_word, unk_string)
+    # separate out the first factor and detonize for BLEU scoring
+    if first_factor_only:
+      sents = [
+        " ".join(t.split(self.sep)[0] for t in sent.split())
+        for sent in sents.split("\n")
       ]
-      for d, indices in zip(self.dicts, zip(*tensor))
-    ]
-    if as_tuple:
-      return " ".join(str(t) for t in zip(*strings))
+      return "\n".join(
+        data_utils.post_process(sent, bpe_symbol)
+        for sent in sents
+      )
     else:
-      return " ".join(self.sep.join(t) for t in zip(*strings))
+      return sents
 
   def unk_string(self, escape=False, as_tuple=False):
     unk = tuple(d.unk_string(escape) for d in self.dicts)
