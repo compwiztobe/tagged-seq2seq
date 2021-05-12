@@ -200,7 +200,7 @@ class TupleDictionary(Dictionary):
       bpe_symbol=None,
       escape_unk=escape_unk,
       extra_symbols_to_ignore=extra_symbols_to_ignore,
-      unk_string=self.sep.join((unk_string,)*len(self.dicts))
+      unk_string=self.sep.join((unk_string,)*len(self.dicts)) if unk_string else None
     )
     # hack to insert unk_string correctly on individual factors
     # this will be VERY buggy...
@@ -242,7 +242,7 @@ class TupleDictionary(Dictionary):
     raise NotImplementedError
 
   def finalize(self, threshold=-1, nwords=-1, padding_factor=8):
-    # thresholding and nwords are best at applied only to the first factor
+    # thresholding and nwords are best applied only to the first factor
     # since our other factors are probably very small, complete symbol sets
     # like pos or ner tags, instead of open vocabs we need to truncate
     self.dicts[0].finalize(threshold, nwords, padding_factor=1)
