@@ -20,7 +20,6 @@ def tag_sentences(tagger, sentences, progress=False):
       yield from tag_batch(batch)
       batch = []
       token_count = 0
-      print("do not clear cache",file=sys.stderr)
   if batch:
     yield from tag_batch(batch)
 
@@ -42,27 +41,29 @@ def main(args):
   sentences = (Sentence(line.strip()) for line in sys.stdin)
 
   for tagged_sentence in tag_sentences(tagger, sentences, progress=args.progress):
-    if args.print_tags:
+    if args.print:
       yield ' '.join(t.text + args.separator + t.tags['ner'].value for t in tagged_sentence.tokens)
-    token_count += len(tagged_sentence.tokens)
-    sentence_count += 1
-    NE_count += sum(is_NE(token) for token in tagged_sentence.tokens)
+    if args.ner_stats:
+      token_count += len(tagged_sentence.tokens)
+      sentence_count += 1
+      NE_count += sum(is_NE(token) for token in tagged_sentence.tokens)
 
-  return {
-    'sentence_count': sentence_count,
-    'token_count': token_count,
-    'NE_count': NE_count
-  }
+  if args.ner_stats:
+    return {
+      'sentence_count': sentence_count,
+      'token_count': token_count,
+      'NE_count': NE_count
+    }
 
 
 import argparse
 parser = argparse.ArgumentParser("Load a Flair NER model and use it to tag line-wise sentence data from stdin")
 parser.add_argument("-m", "--model-file", required=True,
                    help="path to Flair model file (e.g. final-model.pt)")
-parser.add_argument("--stats", default=True, action='store_true',# action=argparse.BooleanOptionalAction, # python>=3.9 only
+parser.add_argument("--ner-stats", action='store_true',# action=argparse.BooleanOptionalAction, # python>=3.9 only
                     help="print NER tag statistics to stderr upon completion") # - if used with --print-tagged, stats go to stderr, unless another file is specified for tag outputs")
-parser.add_argument("--print-tags", default=False, action='store_true',
-                    help="print tokens with NER tags to stdout, in plain text format with separator")
+parser.add_argument("--print", action='store_true',
+                    help="print tokens with tags to stdout, in plain text format with separator")
 parser.add_argument("--separator", default="<&&&>",
                     help="separator with which to join tokens and tags (to be parsed into a tuple by fairseq")
 parser.add_argument("--no-progress", dest='progress', default=True, action='store_false',
@@ -72,7 +73,8 @@ parser.add_argument("--no-progress", dest='progress', default=True, action='stor
 
 def print_StopIterator(g, file=None):
   stop = yield from g
-  print(stop, file=file)
+  if stop:
+    print(stop, file=file)
 
 if __name__ == "__main__":
   logging.getLogger('flair').handlers[0].stream = sys.stderr
@@ -80,4 +82,4 @@ if __name__ == "__main__":
   args = parser.parse_args()
   output = print_StopIterator(main(parser.parse_args()), file=sys.stderr)
   for line in output:
-      print(line)
+    print(line)
