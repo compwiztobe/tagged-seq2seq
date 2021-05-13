@@ -28,7 +28,9 @@ def is_NE(token):
   # this is for some later version of flair, whatever is installed on solar?
   #return any(tag.value != 'O' for tag in token.annotation_layers['ner'])
   # for an earlier version, whatever is installed on kle4
-  return token.tags['ner'].value != 'O'
+  if 'ner' in token.tags:
+    return token.tags['ner'].value != 'O'
+  return False
 
 def main(args):
   tagger = SequenceTagger.load(args.model_file)
