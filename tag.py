@@ -5,9 +5,9 @@ import sys
 import datetime
 import logging
 
-def tag_sentences(tagger, sentences, progress=False):
+def tag_sentences(tagger, sentences, progress=False, batch_size=625):
   def tag_batch(batch):
-    tagger.predict(batch, mini_batch_size=625)
+    tagger.predict(batch, mini_batch_size=batch_size)
     return batch
   batch = []
   token_count = 0
@@ -24,11 +24,12 @@ def tag_sentences(tagger, sentences, progress=False):
     yield from tag_batch(batch)
 
 def is_NE(token):
-  # this is for some later version of flair, whatever is installed on solar?
-  #return any(tag.value != 'O' for tag in token.annotation_layers['ner'])
+  # this is for some later version of flair, whatever is installed on solar, nipa, etc.
+  if 'ner' in token.annotation_layers:
+    return any(tag.value != 'O' for tag in token.annotation_layers['ner'])
   # for an earlier version, whatever is installed on kle4
-  if 'ner' in token.tags:
-    return token.tags['ner'].value != 'O'
+  #if 'ner' in token.tags:
+  #  return token.tags['ner'].value != 'O'
   return False
 
 def main(args):
@@ -40,9 +41,9 @@ def main(args):
 
   sentences = (Sentence(line.strip()) for line in sys.stdin)
 
-  for tagged_sentence in tag_sentences(tagger, sentences, progress=args.progress):
+  for tagged_sentence in tag_sentences(tagger, sentences, progress=args.progress, batch_size=args.batch_size):
     if args.print:
-      yield ' '.join(t.text + args.separator + t.tags['ner'].value for t in tagged_sentence.tokens)
+      yield ' '.join(t.text + args.separator + t.annotation_layers[tagger.tag_type][0].value for t in tagged_sentence.tokens)
     if args.ner_stats:
       token_count += len(tagged_sentence.tokens)
       sentence_count += 1
@@ -60,6 +61,8 @@ import argparse
 parser = argparse.ArgumentParser("Load a Flair NER model and use it to tag line-wise sentence data from stdin")
 parser.add_argument("-m", "--model-file", required=True,
                    help="path to Flair model file (e.g. final-model.pt)")
+parser.add_argument("--batch-size", default=625, type=int,
+                    help="tagging batch size, in sentences (to optimize GPU mem use per model and dataset)")
 parser.add_argument("--ner-stats", action='store_true',# action=argparse.BooleanOptionalAction, # python>=3.9 only
                     help="print NER tag statistics to stderr upon completion") # - if used with --print-tagged, stats go to stderr, unless another file is specified for tag outputs")
 parser.add_argument("--print", action='store_true',

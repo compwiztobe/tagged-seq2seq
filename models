@@ -1,0 +1,13 @@
+old models
+https://nlp.informatik.hu-berlin.de/resources/models/
+ner/en-ner-conll03-v0.4.pt
+de-ner/de-ner-conll03-v0.4.pt
+pos/en-pos-ontonotes-v0.5.pt
+de-pos/de-pos-ud-hdt-v0.5.pt
+ner-multi/quadner-large.pt
+pos-multi/pos-multi-v0.1.pt
+
+new models
+https://huggingface.co/flair/
+ner-multi/pytorch_model.bin
+upos-multi/pytorch_model.bin
