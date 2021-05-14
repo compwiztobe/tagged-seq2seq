@@ -9,7 +9,7 @@ TAG=$6
 TAGGER=$7
 
 MODEL_TYPE=$TOK
-if [ "$TOK" == "sp" ]; MODEL_TYPE=unigram; fi
+if [ "$TOK" == "sp" ]; then MODEL_TYPE=unigram; fi
 
 OUTDIR="$INPUT.$TOK$VOCAB_SIZE/"
 
