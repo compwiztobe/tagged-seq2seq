@@ -1,23 +1,30 @@
 #!/bin/bash
 
 OUTDIR=$1
-SRC=$3
-TGT=$4
-TOK=$5
-SIZE=$6
+SRC=$2
+TGT=$3
+TOK=$4
+SIZE=$5
 
-python utilities/train_tokenizer.py $OUTDIR/notags.train.{$SRC,$TGT} --model-type $TOK --vocab-size $SIZE --model-prefix $OUTDIR/$TOK$SIZE
+python utilities/train_tokenizer.py $OUTDIR/notags.train.{$SRC,$TGT} --model-type $TOK --vocab-size ${SIZE//k/000} --model-prefix $OUTDIR/$TOK$SIZE
 
-if [[ "$TAG" == *"ner"* ]]; then
-  NER_STATS="--ner-stats"
-else
-  NER_STATS=
-fi
+tokenize() {
+  dataset="$1"
+  tagtypes="$2"
+  args="$3"
+  python utilities/tokenize.py -m $OUTDIR/$TOK$SIZE.model --tag-types $tagtypes $args < "$OUTDIR/$dataset" > "$OUTDIR/$TOK$SIZE.$dataset"
+}
 
-for dataset in notags $TAG.srconly $TAG.tgtonly $TAG.; do
-  for split in train valid test test.noNE test.someNE; do
-    for lang in $SRC $TGT; do
-      python utilities/tokenize.py -m $OUTDIR/$TOK$SIZE.model $NER_STATS --tag-types=$TAG --print < $OUTDIR/$dataset.$split.$lang > $OUTDIR/$TOK$SIZE.$dataset.$split.$lang
+for lang in $SRC $TGT; do
+  for tags in notags ner.srconly ner.tgtonly ner; do
+    for split in train valid test test.someNE test.noNE; do
+      printf '%s' "$tags.$split.$lang: "
+      tokenize $tags.$split.$lang ner --ner-stats
+    done
+  done
+  for tags in upos.srconly upos.tgtonly upos; do
+    for split in train valid test; do
+      tokenize $tags.$split.$lang upos
     done
   done
 done
