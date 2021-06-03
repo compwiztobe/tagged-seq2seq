@@ -27,7 +27,3 @@ utilities/copy_splits.sh $PREFIX 3m $TAG $SRC $TGT "$splits"
 if [[ "$TAG" == *"ner"* ]]; then
   utilities/ne_splits.sh $PREFIX 3m $TAG $SRC $TGT
 fi
-
-# now ready to train sentence piece
-
-utilities/tokenize.sh $PREFIX.3m $TAG $SRC $TGT $TOK $SIZE

@@ -9,6 +9,7 @@ parser.add_argument("splits", nargs="+", type=lambda s: (s.split(',')[0],int(s.s
 parser.add_argument("--dataset-size", default=None, type=int, help="total skip-size group count from stdin to include in split coverage")
 parser.add_argument("--reuse-indices", default=None, help="prefix to look for existing index files and use those (not random indices)")
 parser.add_argument("--skip", default=1, type=int, help="how many lines to group together when selecting indices for each split")
+parser.add_argument("--consecutive", action="store_true", help="do not randomize splits, take them consecutively from input")
 
 args = parser.parse_args()
 
@@ -29,12 +30,14 @@ def readlines(f):
   with open(f) as f:
     return f.readlines()
 
-splits = [x for i, length in enumerate(lengths) for x in [i]*length]
 if args.reuse_indices:
   indices = [int(line.strip()) for name in names for line in readlines(args.reuse_indices+name+'.idx')]
+elif args.consecutive:
+  indices = list(range(sum(lengths)))
 else:
   indices = random.sample(list(range(dataset_size)), sum(lengths))
 
+splits = [x for i, length in enumerate(lengths) for x in [i]*length]
 index_map = {i: split for i, split in zip(indices, splits)}
 
 
