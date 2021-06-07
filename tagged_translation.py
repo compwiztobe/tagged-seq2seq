@@ -88,7 +88,7 @@ class TaggedTranslationTask(TranslationTask):
     sep = os.environ['TAG_SEP'] # default to something?
 
     # read first tuple to determine factor count
-    with open(PathManager.get_local_path(filenames[0]), "r", encoding="utf-8") as f:
+    with open(PathManager.get_local_path(list(filenames)[0]), "r", encoding="utf-8") as f:
       first_token = tokenizer.tokenize_line(f.readline())[0]
       factors = len(first_token.split(sep))
 
