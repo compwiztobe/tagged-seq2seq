@@ -1,4 +1,4 @@
-#### Tagged seq2seq data preparation tools
+## Tagged seq2seq data preparation tools
 
 To maintain separation of concerns, data preparation wherever possible is done
 without interacting with the seq2seq model codebase, fairseq or Flair dependencies,
@@ -12,18 +12,19 @@ are fairly lightweight so these come later.  Finally, building the binary datase
 for fairseq input is left to the last step and requires the same codebase used
 for running the model itself.
 
-Where indicated (steps 1, 3, 5), it is recommended to separate virtual environments
+Where indicated (steps 1, 3, 6), it is recommended to separate virtual environments
 for the dependencies needed for those operations (opustools or Flair or fairseq).
 These dependencies are specified in the requirements files and READMEs in
-`../tagging` and `../tagged-seq2seq`.
+`../tagging` and `../tagged-seq2seq`.  Step 5 requires SentencePieces and
+2 and 4 require only Python 3.8.
 
 For the other preprocessing steps here, use this directory's `requirements.txt`:
 
 ```
-pip install sentencepiece
+pip install sentencepiece==0.1.95
 ```
 
-##### Data prep pipeline overview:
+### Data prep pipeline overview:
 
 1. Retrieving data
 
@@ -34,31 +35,48 @@ pair on every two lines of a single file.  For OpenSubtitles data from OPUS,
 2. Initial preprocessing
 
     - Length filtering with
-      `filter.py MIN_LEN MAX_LEN MAX_RATIO < pairfile > filtered_pairfile`
-    - Lang splitting with `split_langs.sh pairfile SRC TGT`
-      (or merge this with `split_even_odd.sh` logic used later)
+      ```$ filter.py min_len max_len max_ratio < pairfile > filtered_pairfile```
+    - Lang splitting with `split_langs.sh pairfile src tgt`
+
+Alternatively, data preparation scripts such as `fairseq/examples/translation/prepare_iwslt14.sh`
+will prepare some temporary files in a form ready for step 3
+(word tokenized, not subword tokenized, for tagging, and
+one sentence on each line of a separate file for each lang and split,
+words and phrase-ending punctuation - , . etc. - separated by space)
+
+To prepare IWSLT14 data into a single source file for each language:
+```$ cat [iwslt14path]/tmp/{train,valid,test}.src > iwslt14/iwslt14.src-tgt.src```
+```$ cat [iwslt14path]/tmp/{train,valid,test}.tgt > iwslt14/iwslt14.src-tgt.tgt```
+and pass `--consecutive` as an additional arg along with the split sizes (e.g. from `wc`)
+to `generate_splits.sh` below to prevent split randomization.  Then generate splits
+can also generate the index files needed for copying data to other splits with `copy_splits.sh`.
 
 3. Tagging with Flair
 
-This is done with a separate code base up in `../tagging`.  Requires a CUDA device.
+This is done with a separate code base up in `../tagging`.  Requires a CUDA device.  See `../tagging/README.md`
 
-4. Final preprocessing
+4. Split generation
 
-    - Split generation:
-      `random_splits.py prefix linecount 2 train,train_size valid,valid_size test,test_size`
-    - Find test subsplits `{some,no}NE` with `ne_split.py prefix sep 2`
+    Requires only Python 3.8.
+
+    - Tagged split generation:
+      ```$ generate_splits.sh prefix suffix tag srclang tgtlang "train,train_size valid,valid_size test,test_size" additional_args```
     - Copying tagged lines according to `split.lang.idx` to create `srconly`,
-      `tgtonly`, and `tagged` splits. (This script doesn't exist).
-    - Splitting all split files with `split_even_odd.sh pairfile SRC TGT`
-      (this one could instead have input piped to it, so consider that).
-    - Now we need to tokenize.  Train tokenizer with
-      `train_tokenizer.py --vocab-size VOCAB_SIZE --model-type {unigram,bpe,char,word} --model-prefix OUTPUT`.
-    - Tokenize all split files using that trained sentencepiece model,
-      with tag broadcasting.
+      `tgtonly`, and `tagged` splits.
+      ```$ copy_splits.sh prefix suffix tag srclang tgtlang "train,train_size, valid,valid_size test,test_size"```
+    - (For NER tagging) Find test subsplits `{some,no}NE` with `ne_split.py prefix sep 2`
 
-5. Fairseq binarization
+5. Subword tokenization
 
-With the `../src` code and pip requirements, `fairseq-preprocess` on train valid test
+    Requires `pip install sentencepiece==0.1.95`)
+
+    Now we need to tokenize.  Train tokenizer and apply to all splits with
+    ```$ tokenize.sh datadir srclang tgtlang tok_type vocab_size```
+    where `TOK_TYPE` can be `unigram`, `bpe`, `word`, `char`
+
+6. Fairseq binarization
+
+With the `../tagged-seq2seq` code files and pip requirements, `fairseq-preprocess` on train valid test
 for all corners of the tagtype, srctag, tgttag cube, plus on `test.{some,noNE}`
 once dictionaries are built.  This step does NOT require a CUDA device
 (though later training will).
