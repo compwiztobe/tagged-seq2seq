@@ -1,2 +1,1 @@
-torch==1.2.0
-flair==0.4.5
+flair==0.8.0.post1
