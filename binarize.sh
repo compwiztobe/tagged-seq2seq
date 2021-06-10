@@ -6,8 +6,13 @@ SRC=${LANGPAIR%-*}
 TGT=${LANGPAIR#*-}
 TOK=$3
 TAGABLATION=$4
-TAG=${TAGABLATION%-*}
-ABLATION=${TAGABLATION#*-}
+if [[ $TAGABLATION == *-* ]]; then
+  TAG=${TAGABLATION%-*}
+  ABLATION=${TAGABLATION#*-}
+else
+  TAG=$TAGABLATION
+  ABLATION=""
+fi
 OUTPUT_PREFIX=$5
 
 if [[ $6 == "shared" ]]; then
@@ -15,7 +20,7 @@ if [[ $6 == "shared" ]]; then
 else
   SHARED=
 fi
-SUBSPLIT=${7:+-$7}
+SUBSPLIT=$7
 
 ADDITIONAL_OPTIONS=$8
 
@@ -38,6 +43,11 @@ OUTDIR="data-bin/$OUTPUT_PREFIX-${TOK:+$TOK-}$TAG${ABLATION:+-$ABLATION}"
 
 # using a shared dictionary
 if [[ $SHARED == "shared" ]]; then
+  if [[ $ABLATION != "" ]]; then
+    echo "Shared token dictionary currently not implemented for asymmetric tagging"
+    echo "Try without \"shared\" or without \"srconly/tgtonly\""
+    exit 1
+  fi
   OUTDIR=$OUTDIR-shared$ADDITIONAL_OPTIONS
   ADDITIONAL_OPTIONS="--joined-dictionary $ADDITIONAL_OPTIONS"
 else
@@ -58,9 +68,9 @@ if [[ ($SUBSPLIT == "someNE") || ($SUBSPLIT == "noNE") ]]; then
       TGTDICT=$TAG
     fi
 
-  DICTS="--srcdict data-bin/OpenSub-3m-unigram$size-$SRCDICT${SHARED:+-shared}/dict.$SRC.txt"
+  DICTS="--srcdict data-bin/$OUTPUT_PREFIX-${TOK:+$TOK-}$SRCDICT${SHARED:+-shared}/dict.$SRC.txt"
   if [[ $SHARED != "shared" ]]; then
-    DICTS="$DICTS --tgtdict data-bin/OpenSub-3m-unigram$size-$TGTDICT${SHARED:+-shared}/dict.$TGT.txt"
+    DICTS="$DICTS --tgtdict data-bin/$OUTPUT_PREFIX-${TOK:+$TOK-}$TGTDICT${SHARED:+-shared}/dict.$TGT.txt"
   fi
   SPLITS="--testpref $TEXT.test.$SUBSPLIT"
   OUTDIR=$OUTDIR-$SUBSPLIT

@@ -26,16 +26,16 @@ BATCH_MAX=512
 BATCHES_PER_UPDATE=16
 WARMUP_INTERVAL=500
 
-EPOCHS=${2:-40}
+ADDITIONAL_OPTIONS=$2
 
-ADDITIONAL_OPTIONS=$3
+EPOCHS=${3:-40}
 
 GPU_COUNT=$(echo $CUDA_VISIBLE_DEVICES | awk -F, '{print NF}')
 UPDATE_FREQ=$(expr $BATCHES_PER_UPDATE / $GPU_COUNT)
 
 DATADIR=data-bin/$DATASET
 LOGDIR=logs/$DATASET$ADDITIONAL_OPTIONS
-CHECKPOINTDIR=checkpoints/OpenSub-3m-$DATASET$ADDITIONAL_OPTIONS
+CHECKPOINTDIR=checkpoints/$DATASET$ADDITIONAL_OPTIONS
 
 echo
 echo EXPERIMENT PARAMS
@@ -88,8 +88,16 @@ echo $train
 echo
 
 eval $train
+STATUS=$?
 
 sleep 1 # just in case of stderr flushing or something
+
+if [[ $STATUS != 0 ]]; then
+  echo
+  echo "Error during training ..."
+  date
+  exit $STATUS
+fi
 
 echo
 if [ -a $CHECKPOINTDIR/checkpoint$EPOCHS.pt ]; then

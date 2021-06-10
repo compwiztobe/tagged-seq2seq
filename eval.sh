@@ -12,16 +12,17 @@ date
 DATASET=$1
 CHECKPOINT_SUFFIX=$2
 
-EPOCH=${3:-40}
-SUBSPLIT=${4:+-$3}
+SUBSPLIT=${3:+-$3}
 
-ADDITIONAL_OPTIONS=$5
+ADDITIONAL_OPTIONS=$4
+
+EPOCH=${5:-40}
 
 BATCH_MAX=512
 
 DATADIR=data-bin/$DATASET$SUBSPLIT
 CHECKPOINT=checkpoints/$DATASET$CHECKPOINT_SUFFIX/checkpoint$EPOCH.pt
-RESULTSDIR=results/$DATASET$CHECKPOINT_SUFFIX-chkpt$EPOCH$ADDITIONAL_OPTIONS
+RESULTSDIR=results/$DATASET$CHECKPOINT_SUFFIX$SUBSPLIT-chkpt$EPOCH$ADDITIONAL_OPTIONS
 
 ### Python Virtual Env ###
 echo
@@ -35,7 +36,7 @@ EXPERIMENT_DIR=$HOME/tagged-seq2seq
 echo "cd $EXPERIMENT_DIR"
 cd $EXPERIMENT_DIR
 
-evaluate="fairseq-generate $DATASET \
+evaluate="fairseq-generate $DATADIR \
 --user-dir tagged-seq2seq --task tagged_translation \
 --scoring bleu --remove-bpe sentencepiece \
 --path $CHECKPOINT \
@@ -49,8 +50,16 @@ echo $evaluate
 echo
 
 eval $evaluate
+STATUS=$?
 
 sleep 1 # flush buffers
+
+if [[ $STATUS != 0 ]]; then
+  echo
+  echo "Error during evaluation ..."
+  date
+  exit $STATUS
+fi
 
 echo
 echo "Result: $RESULTSDIR/generate-test.txt"
