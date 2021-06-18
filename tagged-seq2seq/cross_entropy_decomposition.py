@@ -1,4 +1,5 @@
 import math
+from itertools import zip_longest
 
 from fairseq import metrics
 from fairseq.criterions import register_criterion
@@ -68,9 +69,7 @@ class CrossEntropyDecompositionCriterion(LabelSmoothedCrossEntropyCriterion):
       "nll_special": nll_loss_special.data,
       # "ntokens_special": ,
       # "ntokens_nonspecial": ,
-    })
-    logging_output.update({
-      "nll_factor%d" % i: nll_loss_factor.data for i, nll_loss_factor in enumerate(nll_loss_factors)
+      "nll_factors": nll_loss_factors
     })
 
     return loss, sample_size, logging_output
@@ -79,20 +78,13 @@ class CrossEntropyDecompositionCriterion(LabelSmoothedCrossEntropyCriterion):
   def reduce_metrics(cls, logging_outputs):
     super().reduce_metrics(logging_outputs)
 
-    # this is a classmethod with no knowledge of instances and their factors
-    # so we need to infer from the logging outputs
-    factor_count = max(
-      int(key[len("nll_factor"):])
-      for log in logging_outputs
-      for key in log.keys()
-      if key.startswith("nll_factor")
-    ) + 1
-
     nll_special_sum = sum(log.get("nll_special", 0) for log in logging_outputs)
 
     nll_factor_sums = [
-      sum(log.get("nll_factor%d" % i, 0) for log in logging_outputs)
-      for i in range(factor_count)
+      sum(nll_factor) for nll_factor in zip_longest(
+        *[log.get("nll_factors", []) for log in logging_outputs],
+        fillvalue=0
+      )
     ]
 
     ntokens = sum(log.get("ntokens", 0) for log in logging_outputs)
