@@ -10,8 +10,10 @@ class CrossEntropyDecompositionCriterion(LabelSmoothedCrossEntropyCriterion):
     # splitting this into two steps here to be able to reuse the sum space
     # projection computation (the bulk of the decoder) while having access
     # to both that and the subsequent pair space projection
-    model.decoder.output_layer = lambda *args: type(model.decoder).output_layer(model.decoder, *args, factored=True)
+    output_layer = model.decoder.output_layer
+    model.decoder.output_layer = lambda *args: output_layer(*args, factored=True)
     (net_output, special_output, *factor_outputs), _ = model(**sample["net_input"])
+    model.decoder.output_layer = output_layer
     net_output = (model.decoder._to_pair_space(net_output), _)
     # normally this is done in one pass by model.forward with factored=False (default)
 
