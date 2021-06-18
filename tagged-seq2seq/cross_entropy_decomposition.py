@@ -64,13 +64,14 @@ class CrossEntropyDecompositionCriterion(LabelSmoothedCrossEntropyCriterion):
     # although we don't really use the label smoothed loss_factors, so could drop those with
     # nll_loss_factors = [self.compute_loss(...)[1] for ...]
 
-    logging_output |= {
+    logging_output.update({
       "nll_special": nll_loss_special.data,
       # "ntokens_special": ,
       # "ntokens_nonspecial": ,
-    } | {
+    })
+    logging_output.update({
       "nll_factor%d" % i: nll_loss_factor.data for i, nll_loss_factor in enumerate(nll_loss_factors)
-    }
+    })
 
     return loss, sample_size, logging_output
 
@@ -81,7 +82,7 @@ class CrossEntropyDecompositionCriterion(LabelSmoothedCrossEntropyCriterion):
     # this is a classmethod with no knowledge of instances and their factors
     # so we need to infer from the logging outputs
     factor_count = max(
-      int(key.remove_prefix("nll_factor"))
+      int(key[len("nll_factor"):])
       for log in logging_outputs
       for key in log.keys()
       if key.startswith("nll_factor")
