@@ -90,6 +90,8 @@ class CrossEntropyDecompositionCriterion(LabelSmoothedCrossEntropyCriterion):
       if key.startswith("nll_factor")
     ) + 1
 
+    nll_loss_sum = sum(log.get("nll_loss", 0) for log in logging_outputs)
+
     nll_special_sum = sum(log.get("nll_special", 0) for log in logging_outputs)
 
     nll_factor_sums = [
@@ -103,18 +105,21 @@ class CrossEntropyDecompositionCriterion(LabelSmoothedCrossEntropyCriterion):
     # ntokens_special = sum(log.get("ntokens_special", 0) for log in logging_outputs)
     # ntokens_nonspecial = sum(log.get("ntokens_nonspecial", 0) for log in logging_outputs)
 
+    nll_loss = nll_loss_sum / ntokens / math.log(2)
+    nll_special = nll_special_sum / ntokens / math.log(2)
+    nll_factors = [nll_factor_sum / ntokens / math.log(2) for nll_factor_sum in nll_factor_sums]
+    nll_nonspecial = sum(nll_factors)
     metrics.log_scalar(
-      "nll_special", nll_special_sum / ntokens / math.log(2), ntokens, round=6
+      "nll_special", nll_special, ntokens, round=6
     )
     metrics.log_scalar(
-      "nll_nonspecial", sum(nll_factor_sums) / ntokens / math.log(2), ntokens, round=3
+      "nll_nonspecial", nll_nonspecial, ntokens, round=3
     )
-    for i, nll_factor_sum in enumerate(nll_factor_sums):
+    for i, nll_factor in enumerate(nll_factors):
       metrics.log_scalar(
-        "nll_factor%d" % i, nll_factor_sum / ntokens / math.log(2), ntokens, round=3
+        "nll_factor%d" % i, nll_factor, ntokens, round=3
       )
 
-    metrics.log_derived(
-      "nll_renorm",
-      lambda meters: meters["nll_loss"].avg - meters["nll_nonspecial"].avg - meters["nll_special"].avg
+    metrics.log_scalar(
+      "nll_renorm", nll_loss - nll_special - nll_nonspecial, round = 3
     )
