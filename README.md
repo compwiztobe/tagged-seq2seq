@@ -66,8 +66,8 @@ _(Requires CUDA-enabled GPU)_ To train and evaluate a new model, specify dataset
 (e.g. `IWSLT14-unigram32k-notags`, `OpenSub-3m-unigram32k-ner`):
 ```
 export CUDA_VISIBLE_DEVICES=...
-./train.sh OpenSub-3m-unigram32k-ner-shared "--share-all-embeddings"
-./eval.sh OpenSub-3m-unigram32k-ner-shared "--share-all-embeddings"
+./train.sh transformer OpenSub-3m-unigram32k-ner-shared "--share-all-embeddings"
+./eval.sh OpenSub-3m-unigram32k-ner-shared "-transformer--share-all-embeddings"
 ```
 
 In place of `ner`, can also run `ner-srconly`, `ner-tgtonly`, `upos`, `notags`, etc.

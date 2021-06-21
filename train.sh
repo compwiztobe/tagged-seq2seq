@@ -17,7 +17,9 @@ echo "node: $(/bin/hostname)"
 # echo "cwd: $(/bin/pwd)"
 date
 
-DATASET=$1
+MODEL=$1
+
+DATASET=$2
 #BATCH_MAX=$2
 #BATCHES_PER_UPDATE=$3
 #WARMUP_INTERVAL=$4
@@ -26,19 +28,20 @@ BATCH_MAX=512
 BATCHES_PER_UPDATE=16
 WARMUP_INTERVAL=500
 
-ADDITIONAL_OPTIONS=$2
+ADDITIONAL_OPTIONS=$3
 
-EPOCHS=${3:-40}
+EPOCHS=${4:-40}
 
 GPU_COUNT=$(echo $CUDA_VISIBLE_DEVICES | awk -F, '{print NF}')
 UPDATE_FREQ=$(expr $BATCHES_PER_UPDATE / $GPU_COUNT)
 
 DATADIR=data-bin/$DATASET
-LOGDIR=logs/$DATASET$ADDITIONAL_OPTIONS
-CHECKPOINTDIR=checkpoints/$DATASET$ADDITIONAL_OPTIONS
+LOGDIR=logs/$DATASET-$MODEL$ADDITIONAL_OPTIONS
+CHECKPOINTDIR=checkpoints/$DATASET-$MODEL$ADDITIONAL_OPTIONS
 
 echo
 echo EXPERIMENT PARAMS
+echo "MODEL=$MODEL"
 echo "DATADIR=$DATADIR"
 echo "LOGDIR=$LOGDIR"
 echo "CHECKPOINTDIR=$CHECKPOINTDIR"
@@ -64,7 +67,7 @@ echo "cd $EXPERIMENT_DIR"
 cd $EXPERIMENT_DIR
 
 train="fairseq-train $DATADIR \
---user-dir tagged-seq2seq --task tagged_translation --arch tagged_transformer \
+--user-dir tagged-seq2seq --task tagged_translation --arch tagged_$MODEL \
 --save-dir $CHECKPOINTDIR \
 --tensorboard-logdir $LOGDIR \
 --share-decoder-input-output-embed --optimizer adam --adam-betas '(0.9, 0.98)' --clip-norm 0.0 \
