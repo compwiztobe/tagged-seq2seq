@@ -47,7 +47,8 @@ class TaggedTransformerModel(TransformerModel):
     # if provided, load from preloaded dictionaries
     if path:
       embed_dict = utils.parse_embedding(path)
-      utils.load_embedding(embed_dict, dictionary, emb) # ???
+      factor_vocab = dictionary.special_dict.keys() + [key for d in dictionary.dicts for key in d]
+      utils.load_embedding(embed_dict, factor_vocab, emb)
     return emb
 
   @classmethod
