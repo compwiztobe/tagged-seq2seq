@@ -25,10 +25,10 @@ def tag_sentences(tagger, sentences, progress=False, batch_size=BATCH_SIZE):
     yield from tag_batch(batch)
 
 def is_NE(token):
-  # this is for some later version of flair, whatever is installed on solar, nipa, etc.
+  # flair 0.8.0
   if 'ner' in token.annotation_layers:
     return any(tag.value != 'O' for tag in token.annotation_layers['ner'])
-  # for an earlier version, whatever is installed on kle4
+  # flair 0.4.5
   #if 'ner' in token.tags:
   #  return token.tags['ner'].value != 'O'
   return False
@@ -39,6 +39,8 @@ def main(model_file, sentences, separator, batch_size=BATCH_SIZE, ner_stats=Fals
   token_count = 0
   sentence_count = 0
   NE_count = 0
+
+  sentences = (Sentence(s) for s in sentences)
 
   for tagged_sentence in tag_sentences(tagger, sentences, progress=progress, batch_size=batch_size):
     yield ' '.join(t.text + separator + t.annotation_layers[tagger.tag_type][0].value for t in tagged_sentence.tokens)
