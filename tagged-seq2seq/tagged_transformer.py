@@ -1,5 +1,3 @@
-import torch
-import torch.nn as nn
 from fairseq.models import register_model, register_model_architecture
 from fairseq.models.transformer import (
   Embedding,
@@ -7,49 +5,12 @@ from fairseq.models.transformer import (
   TransformerDecoder,
   base_architecture as transformer_base_architecture
 )
-from fairseq.modules import AdaptiveSoftmax
+
+from .tagged_model import TaggedModel, TaggedDecoder
 
 @register_model('tagged_transformer')
-class TaggedTransformerModel(TransformerModel):
-  """
-  Tagged Transformer architecture, with:
-    - combined embeddings for source and target sequence token-level tags
-    - simultaneous prediction of target sequence tokens and tags
-
-  Args:
-    encoder (TransformerEncoder): the encoder
-    decoder (TransformerDecoder): the decoder
-
-  The Tagged Transformer model provides the following named architectures and
-  command-line arguments:
-
-  .. argparse::
-    :ref: fairseq.models.tagged_transformer_parser
-    :prog:
-  """
-
-  # def __init__(self, args, encoder, decoder):
-  #   super().__init__(args, encoder, decoder)
-  #   self.args = args
-  #   self.supports_align_args = True
-
-  @staticmethod
-  def add_args(parser):
-    TransformerModel.add_args(parser)
-    # parser. # ??? any additional arguments needed ? for instance to specify dictionaries
-
-  @classmethod
-  def build_embedding(cls, args, dictionary, embed_dim, path=None):
-    num_embeddings = dictionary.nspecial + sum(dictionary.factors)
-    padding_idx = dictionary.pad()
-
-    emb = SumEmbedding(dictionary, num_embeddings, embed_dim, padding_idx)
-    # if provided, load from preloaded dictionaries
-    if path:
-      embed_dict = utils.parse_embedding(path)
-      factor_vocab = dictionary.special_dict.keys() + [key for d in dictionary.dicts for key in d]
-      utils.load_embedding(embed_dict, factor_vocab, emb)
-    return emb
+class TaggedTransformerModel(TaggedModel, TransformerModel):
+  embedding = Embedding
 
   @classmethod
   def build_decoder(cls, args, tgt_dict, embed_tokens):
@@ -60,119 +21,16 @@ class TaggedTransformerModel(TransformerModel):
       no_encoder_attn=getattr(args, "no_cross_attention", False),
     )
 
-class TaggedTransformerDecoder(TransformerDecoder):
-  """
-  Tagged Transformer decoder consisting of *args.decoder_layers* layers. Each layer
-  is a :class:`TransformerDecoderLayer`.
 
-  Args:
-    args (argparse.Namespace): parsed command-line arguments
-    dictionaries (~List[fairseq.data.Dictionary]): decoding dictionaries
-    embed_tokens (torch.nn.Embedding): target side embedding
-    no_encoder_attn (bool, optional): whether to attend to encoder outputs
-        (default: False).
-  """
+class TaggedTransformerDecoder(TaggedDecoder, TransformerDecoder):
   def __init__(self, args, dictionary, embed_tokens, no_encoder_attn=False):
     super().__init__(args, dictionary, embed_tokens, no_encoder_attn=no_encoder_attn)
-    self.output_projection_indices = nn.Parameter(
-      dictionary.factor_indices(torch.arange(len(dictionary)), for_embedding=True),
-      requires_grad=False
-    ) # this paramater should not be optimized, it's a fixed mapping
-    if args.adaptive_softmax_cutoff is not None:
-      self.adaptive_softmax = [self.adaptive_softmax] + [
-        AdaptiveSoftmax(
-          len(dictionary),
-          self.output_embed_dim,
-          utils.eval_str_list(args.adaptive_softmax_cutoff, type=int),
-          dropout=args.adaptive_softmax_dropout,
-          adaptive_inputs=embed_tokens if args.tie_adaptive_weights else None,
-          factor=args.adaptive_softmax_factor,
-          tie_proj=args.tie_adaptive_proj,
-        ) for dictionary in dictionaries[1:]
-      ] # ??? this will need to function like a single adaptive_softmax
-      # but somehow combining results in an outer product fashion the results from multiple
-    elif self.share_input_output_embed:
-      self.output_projection = nn.Linear(
-        self.embed_tokens.weight.shape[1],
-        self.embed_tokens.weight.shape[0],
-        bias=False,
-      )
-      self.output_projection.weight = self.embed_tokens.weight
-    else:
-      # probably better compute all than reuse the first, which may change with fairseq versions...
-      self.output_projection = [self.output_projection] + [
-        nn.Linear(
-          self.output_embed_dim, len(dictionary), bias=False
-        ) for dictionary in dictionaries
-      ]
-      for output_projection in self.output_projection:
-        nn.init.normal_(
-          output_projection.weight, mean=0, std=self.output_embed_dim ** -0.5
-        )
+    super().init_tagged_output(args, dictionary, embed_tokens)
 
-  def output_layer(self, features, factored=False):
-    """Project features to the vocabulary size."""
-    if self.adaptive_softmax is None:
-      sum_projection = self.output_projection(features)
-      if not factored:
-        return self._to_pair_space(sum_projection)
-      else:
-        # return individual output embedding projection for special symbols and each factor
-        # without adding them together
-        sizes = [self.dictionary.nspecial, *self.dictionary.factors]
-        bounds = [(sum(sizes[:i]), sum(sizes[:i+1])) for i in range(len(sizes))]
-        return (
-          sum_projection,
-          *[sum_projection[:,:,start:end] for start, end in bounds]
-        )
-    else:
-      return features
-
-  def _to_pair_space(self, sum_projection):
-    """
-    this couldn't be much easier - factorization of the product space indices
-    are already computed in self.output_projection_indices - just need to
-    use these as the input to an embedding with the output vector elements
-    as weights - just gotta get the dimensions right
-    """
-    # sum_projection = self.output_projection(features) is batch indices x sum_space
-    # need to push sum space through to first axis, so it's the embedding count
-    # and also need to collect batch indices into a single axis to form the embedding dim
-    # (nn.functional.embedding backprop doesn't support multiple embedding dims)
-    sum_projection = sum_projection.T
-    vocab_size = sum_projection.shape[0]
-    batch_size = sum_projection.shape[1:]
-    pair_projection = add_embeddings_special(
-      self.output_projection_indices,
-      lambda x: nn.functional.embedding(x,
-        sum_projection.reshape(vocab_size, -1))
-    ).reshape(-1, *batch_size).T
-    return pair_projection
-    # first two axes remain batch indices, last axis is pair space projection values
-
-
-class SumEmbedding(nn.Embedding):
-  def __init__(self, dictionary, num_embeddings, embedding_dim, padding_idx):
-    super().__init__(num_embeddings, embedding_dim, padding_idx=padding_idx)
-    self.dictionary = dictionary
-    self.weight = Embedding(num_embeddings, embedding_dim, padding_idx).weight
-
-  def forward(self, input):
-    input_factors = self.dictionary.factor_indices(input, for_embedding=True)
-    return add_embeddings_special(input_factors, super().forward)
-
-
-def add_embeddings_special(indices, embedding):
-  # indices is any size, output is indices.shape[:-1] x embedding.shape[1:]
-  # summed along last axis of indices (the factor axis)
-  # indices should be between 0 and embedding.shape[0] - 1
-  # some indices may be -1 indicating a special symbol
-  # for which we only sum over one vocab position
-  special_indices = indices < 0
-  indices[special_indices] = 0
-  embeddings = embedding(indices)
-  embeddings[special_indices,:] = 0
-  return embeddings.sum(axis=indices.dim() - 1)
+  def projection(self, args, dictionary):
+    output_layer = nn.Linear(self.output_embed_dim, dictionary.nspecial + sum(dictionary.factors), bias=False)
+    nn.init.normal_(output_layer.weight, mean=0, std=self.output_embed_dim ** -0.5)
+    return output_layer
 
 
 @register_model_architecture("tagged_transformer", "tagged_transformer")

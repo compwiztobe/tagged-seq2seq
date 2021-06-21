@@ -14,7 +14,7 @@ class CrossEntropyDecompositionCriterion(LabelSmoothedCrossEntropyCriterion):
     model.decoder.output_layer = lambda *args: output_layer(*args, factored=True)
     (net_output, special_output, *factor_outputs), _ = model(**sample["net_input"])
     model.decoder.output_layer = output_layer
-    net_output = (model.decoder._to_pair_space(net_output), _)
+    net_output = (model.decoder._to_product_space(net_output), _)
     # normally this is done in one pass by model.forward with factored=False (default)
 
     # copied from super().forward because it can't be separated otherwise
