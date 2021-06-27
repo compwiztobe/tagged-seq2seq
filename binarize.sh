@@ -43,20 +43,21 @@ OUTDIR="data-bin/$OUTPUT_PREFIX-${TOK:+$TOK-}$TAG${ABLATION:+-$ABLATION}"
 
 # using a shared dictionary
 if [[ $SHARED == "shared" ]]; then
+  OUTDIR=$OUTDIR-shared$ADDITIONAL_OPTIONS
   if [[ $ABLATION != "" ]]; then
     echo "Shared token dictionary currently not implemented for asymmetric tagging"
     echo "Try without \"shared\" or without \"srconly/tgtonly\""
     exit 1
+  else
+    ADDITIONAL_OPTIONS="--joined-dictionary $ADDITIONAL_OPTIONS"
   fi
-  OUTDIR=$OUTDIR-shared$ADDITIONAL_OPTIONS
-  ADDITIONAL_OPTIONS="--joined-dictionary $ADDITIONAL_OPTIONS"
 else
   OUTDIR=$OUTDIR$ADDITIONAL_OPTIONS
 fi
 
 # binarizing all splits (with dict from train split)
 # or reusing existing dict for NE subsplits
-if [[ ($SUBSPLIT == "someNE") || ($SUBSPLIT == "noNE") ]]; then
+if [[ ($SUBSPLIT == "someNE") || ($SUBSPLIT == "noNE") || ($ABLATION != "")]]; then
   if [[ $ABLATION == "tgtonly" ]]; then
     SRCDICT=notags
   else
@@ -69,13 +70,17 @@ if [[ ($SUBSPLIT == "someNE") || ($SUBSPLIT == "noNE") ]]; then
   fi
 
   DICTS="--srcdict data-bin/$OUTPUT_PREFIX-${TOK:+$TOK-}$SRCDICT${SHARED:+-shared}/dict.$SRC.txt"
-  if [[ $SHARED != "shared" ]]; then
+  if [[ ($SHARED != "shared") || ($ABLATION != "") ]]; then
     DICTS="$DICTS --tgtdict data-bin/$OUTPUT_PREFIX-${TOK:+$TOK-}$TGTDICT${SHARED:+-shared}/dict.$TGT.txt"
   fi
-  SPLITS="--testpref $TEXT.test.$SUBSPLIT"
-  OUTDIR=$OUTDIR-$SUBSPLIT
+  OUTDIR=$OUTDIR${SUBSPLIT:+-$SUBSPLIT}
 else
   DICTS=""
+fi
+
+if [[ ($SUBSPLIT == "someNE") || ($SUBSPLIT == "noNE") ]]; then
+  SPLITS="--testpref $TEXT.test.$SUBSPLIT"
+else
   SPLITS="--trainpref $TEXT.train --validpref $TEXT.valid --testpref $TEXT.test"
 fi
 
