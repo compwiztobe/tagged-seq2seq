@@ -58,15 +58,15 @@ fi
 # or reusing existing dict for NE subsplits
 if [[ ($SUBSPLIT == "someNE") || ($SUBSPLIT == "noNE") ]]; then
   if [[ $ABLATION == "tgtonly" ]]; then
-      SRCDICT=notags
-    else
-      SRCDICT=$TAG
-    fi
-    if [[ $ABLATION == "srconly" ]]; then
-      TGTDICT=notags
-    else
-      TGTDICT=$TAG
-    fi
+    SRCDICT=notags
+  else
+    SRCDICT=$TAG
+  fi
+  if [[ $ABLATION == "srconly" ]]; then
+    TGTDICT=notags
+  else
+    TGTDICT=$TAG
+  fi
 
   DICTS="--srcdict data-bin/$OUTPUT_PREFIX-${TOK:+$TOK-}$SRCDICT${SHARED:+-shared}/dict.$SRC.txt"
   if [[ $SHARED != "shared" ]]; then
