@@ -2,7 +2,7 @@
 
 <img align="right" src="./diagram.svg" title="Tagged seq2seq" width="360">
 
-This is the source code for results published in [Siekmeier et al., 2021]().
+This is the source code for results published in [Siekmeier et al., 2021](https://aclanthology.org/2021.iwslt-1.30).
 
 This repo consists of the following:
 - `tagged-seq2seq/` - the main fairseq extensions to be imported with `--user-dir`
@@ -73,3 +73,28 @@ export CUDA_VISIBLE_DEVICES=...
 In place of `ner`, can also run `ner-srconly`, `ner-tgtonly`, `upos`, `notags`, etc.
 
 Tensorboard logs are written to `logs/dataset`, fairseq-generate output in `results/dataset`.
+
+## Citation
+
+(Siekmeier et al., 2021)
+
+Aren Siekmeier, WonKee Lee, Hongseok Kwon, and Jong-Hyeok Lee. 2021. [Tag assisted neural machine translation of film subtitles](https://doi.org/10.18653/v1/2021.iwslt-1.30). In _Proceedings of the 18th International Conference on Spoken Language Translation (IWSLT 2021)_, pages 255–262, Bangkok, Thailand (online). Association for Computational Linguistics.
+
+``` bibtex
+@inproceedings{siekmeier-etal-2021-tag,
+    title = "Tag Assisted Neural Machine Translation of Film Subtitles",
+    author = "Siekmeier, Aren  and
+      Lee, WonKee  and
+      Kwon, Hongseok  and
+      Lee, Jong-Hyeok",
+    booktitle = "Proceedings of the 18th International Conference on Spoken Language Translation (IWSLT 2021)",
+    month = aug,
+    year = "2021",
+    address = "Bangkok, Thailand (online)",
+    publisher = "Association for Computational Linguistics",
+    url = "https://aclanthology.org/2021.iwslt-1.30",
+    doi = "10.18653/v1/2021.iwslt-1.30",
+    pages = "255--262",
+    abstract = "We implemented a neural machine translation system that uses automatic sequence tagging to improve the quality of translation. Instead of operating on unannotated sentence pairs, our system uses pre-trained tagging systems to add linguistic features to source and target sentences. Our proposed neural architecture learns a combined embedding of tokens and tags in the encoder, and simultaneous token and tag prediction in the decoder. Compared to a baseline with unannotated training, this architecture increased the BLEU score of German to English film subtitle translation outputs by 1.61 points using named entity tags; however, the BLEU score decreased by 0.38 points using part-of-speech tags. This demonstrates that certain token-level tag outputs from off-the-shelf tagging systems can improve the output of neural translation systems using our combined embedding and simultaneous decoding extensions.",
+}
+```
